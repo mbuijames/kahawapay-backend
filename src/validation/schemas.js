@@ -1,7 +1,7 @@
 // src/validation/schemas.js
 import { z } from "zod";
 
-export const CurrencyEnum = z.enum((process.env.SUPPORTED_CURRENCIES || "KES,UGX,TZS")
+export const CurrencyEnum = z.enum((process.env.SUPPORTED_CURRENCIES || "KES,UGX,TZS,INR")
   .split(",")
   .map(s => s.trim().toUpperCase())
   .filter(Boolean));
