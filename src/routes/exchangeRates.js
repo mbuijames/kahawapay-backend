@@ -65,48 +65,45 @@ router.get("/currencies", async (_req, res) => {
  */
 router.post("/", requireAuth, requireAdmin, async (req, res) => {
   try {
-    // Normalize both shapes
-    const rawCur =
-      (req.body?.target_currency ?? req.body?.targetCurrency ?? "")
-        .toString()
-        .trim()
-        .toUpperCase();
+    // Log everything we received to see real payload
+    console.log("POST /api/settings/exchange-rates raw body:", req.body);
 
-    // Accept numbers or numeric strings
-    const rawRate = req.body?.rate;
-    const rateNum = Number(rawRate);
+    // Accept both snake_case and camelCase; sanitize rate (strip commas/spaces)
+    const target_currency = String(
+      req.body?.target_currency ?? req.body?.targetCurrency ?? ""
+    ).trim().toUpperCase();
 
-    // Validate
-    const curOk = /^[A-Z]{3,10}$/.test(rawCur);
-    const rateOk = Number.isFinite(rateNum) && rateNum > 0;
+    const rateStr = String(req.body?.rate ?? "")
+      .replace(/,/g, "")
+      .trim();
+    const rate = Number(rateStr);
+
+    const curOk = /^[A-Z]{3,10}$/.test(target_currency);
+    const rateOk = Number.isFinite(rate) && rate > 0;
 
     if (!curOk || !rateOk) {
+      console.warn("❌ Validation failed", { target_currency, rate, body: req.body });
       return res.status(400).json({ error: "Target currency and rate required" });
     }
 
-    // Ensure unique index exists (safe if already created)
-    await sequelize.query(
-      `CREATE UNIQUE INDEX IF NOT EXISTS exchange_rates_target_currency_key
-         ON public.exchange_rates (target_currency)`
-    );
-
-    // Upsert
     const rows = await sequelize.query(
       `
-        INSERT INTO public.exchange_rates (target_currency, rate, updated_at)
-        VALUES (:cur, :rate, now())
-        ON CONFLICT (target_currency)
-        DO UPDATE SET rate = EXCLUDED.rate, updated_at = now()
-        RETURNING target_currency, rate, updated_at
+      INSERT INTO public.exchange_rates (target_currency, rate, updated_at)
+      VALUES (:cur, :rate, now())
+      ON CONFLICT (target_currency)
+      DO UPDATE SET rate = EXCLUDED.rate, updated_at = now()
+      RETURNING target_currency, rate, updated_at
       `,
-      { replacements: { cur: rawCur, rate: rateNum }, type: QueryTypes.SELECT }
+      { replacements: { cur: target_currency, rate }, type: QueryTypes.SELECT }
     );
 
-    return res.json(rows[0]);
+    // Return normalized shape
+    const row = rows[0];
+    console.log("✅ Upsert OK:", row);
+    return res.json(row);
   } catch (e) {
     console.error("exchange-rates POST error:", e);
-    return res.status(500).json({ error: "Failed to save exchange rate", details: e.message });
+    return res.status(500).json({ error: "Failed to save exchange rate" });
   }
 });
-
 export default router;
