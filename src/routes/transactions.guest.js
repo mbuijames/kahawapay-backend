@@ -79,6 +79,18 @@ async function createSequentialGuestUser() {
   return { id: row.id, email: row.email };
 }
 
+/** 🔎 Read-only peek of the *next* guest email (no insert) */
+async function peekNextGuestEmail() {
+  const sql = `
+    SELECT COALESCE(MAX(CAST(SUBSTRING(email FROM 'guest-(\\d+)') AS INT)), 0) + 1 AS n
+    FROM public.users
+    WHERE email LIKE 'guest-%@kahawapay.com'
+  `;
+  const rows = await sequelize.query(sql, { type: QueryTypes.SELECT });
+  const n = Number(rows?.[0]?.n || 1);
+  return `guest-${String(n).padStart(5, "0")}@kahawapay.com`;
+}
+
 /* =========================================================
  *                 PREVIEW (NO DB INSERT)
  * POST /api/transactions/guest/preview
@@ -103,9 +115,11 @@ router.post("/guest/preview", async (req, res) => {
       });
     }
 
-    // Return computed values only
+    // ✅ Use the *next* sequential guest email (no insert) so preview shows the DB-style email
+    const guestEmail = await peekNextGuestEmail();
+
     return res.json({
-      sender_email: "guest-preview@kahawapay.com",
+      sender_email: guestEmail,
       amount_recipient: to2(recipient_amount), // local currency amount
       currency,
       recipient_msisdn,
