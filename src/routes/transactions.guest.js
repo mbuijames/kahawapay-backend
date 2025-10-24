@@ -88,15 +88,14 @@ async function createSequentialGuestUser() {
 // PREVIEW — no DB write, no 403 on limit
 router.post("/guest/preview", async (req, res) => {
   try {
-    const raw = { ...(req.body || {}) };
-    const { recipient_msisdn, amount_crypto_btc, currency } = validateGuestPayload(raw);
+    const { amount_crypto_btc, currency, recipient_msisdn } = validateGuestPayload(req.body || {});
+    const { amount_usd, fee_total, recipient_amount } = await computeFromBtc({ amount_crypto_btc, currency });
 
-    const { amount_usd, fee_total, recipient_amount } = await computeFromBtc({
-      amount_crypto_btc,
-      currency,
-    });
+    const LIMIT = Number(process.env.GUEST_TX_LIMIT_USD ?? 100);
+    if (Number(amount_usd) > LIMIT) {
+      return res.status(403).json({ error: `Guests cannot exceed $${LIMIT}` });
+    }
 
-    // DO NOT block here; let frontend show the inline message
     return res.json({
       sender_email: "guest-preview@kahawapay.com",
       amount_recipient: to2(recipient_amount),
