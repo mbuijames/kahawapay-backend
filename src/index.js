@@ -7,17 +7,13 @@ import sequelize from "./db.js";
 
 // Routers
 import authRoutes from "./routes/auth.js";
-import transactionRoutes from "./routes/transactions.js";          // user + general tx
-import guestRoutes from "./routes/transactions.guest.js";          // POST /guest
-import statusRoutes from "./routes/transactions.status.js";        // guest complete/status
-import adminRoutes from "./routes/admin.transactions.js";          // /api/admin/*
-import settingsRoutes from "./routes/settings.js";                 // /api/settings/*
-import exchangeRatesRoutes from "./routes/exchangeRates.js";       // /api/settings/exchange-rates/*
-import walletRoutes from "./routes/wallet.js";                     // /api/wallet/*
-import userTxRouter from "./routes/transactions.user.js";
-import guestTxRouter from "./routes/transactions.guest.js";
-// If you really need the “simple” guest tx route, keep it. If not, remove the import & mounting.
-// import guestTxSimpleRoutes from "./routes/guest.tx.simple.js";
+import userTxRouter from "./routes/transactions.user.js";        // /api/transactions -> /preview, /
+import guestTxRouter from "./routes/transactions.guest.js";      // /api/transactions -> /guest/preview, /guest
+import statusRoutes from "./routes/transactions.status.js";      // /api/transactions/guest/complete etc (mounted at /api)
+import adminRoutes from "./routes/admin.transactions.js";        // /api/admin/*
+import settingsRoutes from "./routes/settings.js";               // /api/settings/*
+import exchangeRatesRoutes from "./routes/exchangeRates.js";     // /api/settings/exchange-rates/*
+import walletRoutes from "./routes/wallet.js";                   // /api/wallet/*
 
 dotenv.config();
 
@@ -26,7 +22,20 @@ const app = express();
 /* -----------------------------
    Global middleware
 ----------------------------- */
-app.use(cors());
+
+// CORS (allow list via env or allow all if unset)
+const corsOrigins = (process.env.CORS_ORIGINS || "")
+  .split(",")
+  .map(s => s.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: corsOrigins.length ? corsOrigins : true,
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 
 // Disable caching globally (place BEFORE routes)
@@ -40,11 +49,12 @@ app.use((req, res, next) => {
 /* -----------------------------
    Healthcheck
 ----------------------------- */
-app.get("/api/health", (req, res) => res.json({ ok: true }));
+app.get("/api/health", (_req, res) => res.json({ ok: true }));
 
 /* -----------------------------
    Routes (each mounted ONCE)
 ----------------------------- */
+
 // Auth
 app.use("/api/auth", authRoutes);
 
@@ -55,18 +65,20 @@ app.use("/api/settings/exchange-rates", exchangeRatesRoutes);
 // Wallet
 app.use("/api/wallet", walletRoutes);
 
-// Transactions
-app.use("/api/transactions", transactionRoutes); // general/user tx routes
-app.use("/api/transactions", guestRoutes);       // adds POST /guest etc.
-app.use("/api", statusRoutes);                   // e.g. /api/transactions/guest/complete
+// Transactions — definitive mounts
+// Final paths provided by these routers:
+//  - POST /api/transactions/preview      (logged-in preview)
+//  - POST /api/transactions              (logged-in create)
+//  - POST /api/transactions/guest/preview  (guest preview)
+//  - POST /api/transactions/guest          (guest create)
 app.use("/api/transactions", userTxRouter);
 app.use("/api/transactions", guestTxRouter);
+
+// Guest status/complete callbacks (keep base at /api if the router defines /transactions/guest/complete etc.)
+app.use("/api", statusRoutes);
+
 // Admin
 app.use("/api/admin", adminRoutes);
-
-
-// Optional: “simple” guest route (avoid overlapping with guestRoutes)
-// app.use("/api", guestTxSimpleRoutes);
 
 /* -----------------------------
    Root
@@ -97,9 +109,9 @@ app.get("/", (_req, res) => {
 /* -----------------------------
    Debug: list registered routes
 ----------------------------- */
-function listRoutes(app) {
+function listRoutes(appInstance) {
   console.log("📌 Registered routes:");
-  app._router.stack.forEach((middleware) => {
+  appInstance._router.stack.forEach((middleware) => {
     if (middleware.route) {
       const methods = Object.keys(middleware.route.methods)
         .map((m) => m.toUpperCase())
