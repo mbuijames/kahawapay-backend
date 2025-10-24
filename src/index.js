@@ -6,14 +6,17 @@ import dotenv from "dotenv";
 import sequelize from "./db.js";
 
 // Routers
+
 import authRoutes from "./routes/auth.js";
-import userTxRouter from "./routes/transactions.user.js";        // /api/transactions -> /preview, /
-import guestTxRouter from "./routes/transactions.guest.js";      // /api/transactions -> /guest/preview, /guest
-import statusRoutes from "./routes/transactions.status.js";      // /api/transactions/guest/complete etc (mounted at /api)
-import adminRoutes from "./routes/admin.transactions.js";        // /api/admin/*
-import settingsRoutes from "./routes/settings.js";               // /api/settings/*
-import exchangeRatesRoutes from "./routes/exchangeRates.js";     // /api/settings/exchange-rates/*
-import walletRoutes from "./routes/wallet.js";                   // /api/wallet/*
+import transactionRoutes from "./routes/transactions.js";          // user + general tx
+import guestRoutes from "./routes/transactions.guest.js";          // POST /guest
+import statusRoutes from "./routes/transactions.status.js";        // guest complete/status
+import adminRoutes from "./routes/admin.transactions.js";          // /api/admin/*
+import settingsRoutes from "./routes/settings.js";                 // /api/settings/*
+import exchangeRatesRoutes from "./routes/exchangeRates.js";       // /api/settings/exchange-rates/*
+import walletRoutes from "./routes/wallet.js";                     // /api/wallet/*
+// If you really need the “simple” guest tx route, keep it. If not, remove the import & mounting.
+// import guestTxSimpleRoutes from "./routes/guest.tx.simple.js";
 
 dotenv.config();
 
@@ -22,36 +25,9 @@ const app = express();
 /* -----------------------------
    Global middleware
 ----------------------------- */
-
-// CORS (allow list via env or allow all if unset)
-const corsOrigins = (process.env.CORS_ORIGINS || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-
-app.use(
-  cors({
-    origin: corsOrigins.length ? corsOrigins : true,
-    credentials: true,
-  })
-);
-
+app.use(cors());
 app.use(express.json());
-
-// 🔎 Log every request (helps verify what reaches Node in prod)
-app.use((req, _res, next) => {
-  console.log("REQ", req.method, req.originalUrl);
-  next();
-});
-
-// 🧪 TEMP sanity route: proves Node sees this exact path
-// Remove after confirming guest preview works end-to-end.
-app.post("/api/transactions/guest/preview", (req, res) => {
-  res.json({
-    ok: true,
-    reached: "index.js temp /api/transactions/guest/preview",
-  });
-});
+app.use(express.urlencoded({ extended: true }));
 
 // Disable caching globally (place BEFORE routes)
 app.use((req, res, next) => {
@@ -62,38 +38,13 @@ app.use((req, res, next) => {
 });
 
 /* -----------------------------
-   Healthcheck & route inspector
+   Healthcheck
 ----------------------------- */
-app.get("/api/health", (_req, res) => res.json({ ok: true }));
-
-// 🔎 List registered routes (debug). Remove after debugging.
-app.get("/__routes", (_req, res) => {
-  const out = [];
-  const stack = app._router?.stack || [];
-  const walk = (prefix, layer) => {
-    if (layer.route?.path) {
-      const methods = Object.keys(layer.route.methods)
-        .map((m) => m.toUpperCase())
-        .join(",");
-      out.push(`${methods} ${prefix}${layer.route.path}`);
-    } else if (layer.name === "router" && layer.handle?.stack) {
-      // Infer base from regexp for common prefixes
-      const rx = layer.regexp?.toString() || "";
-      const base =
-        rx.includes("\\/api\\/transactions") ? "/api/transactions" :
-        rx.includes("\\/api\\b") ? "/api" :
-        "";
-      layer.handle.stack.forEach((l) => walk(base, l));
-    }
-  };
-  stack.forEach((l) => walk("", l));
-  res.json({ routes: out });
-});
+app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 /* -----------------------------
    Routes (each mounted ONCE)
 ----------------------------- */
-
 // Auth
 app.use("/api/auth", authRoutes);
 
@@ -104,20 +55,16 @@ app.use("/api/settings/exchange-rates", exchangeRatesRoutes);
 // Wallet
 app.use("/api/wallet", walletRoutes);
 
-// Transactions — definitive mounts
-// Final paths provided by these routers:
-//  - POST /api/transactions/preview          (logged-in preview)
-//  - POST /api/transactions                  (logged-in create)
-//  - POST /api/transactions/guest/preview    (guest preview)
-//  - POST /api/transactions/guest            (guest create)
-app.use("/api/transactions", userTxRouter);
-app.use("/api/transactions", guestTxRouter);
-
-// Guest status/complete callbacks (router defines e.g. /transactions/guest/complete)
-app.use("/api", statusRoutes);
+// Transactions
+app.use("/api/transactions", transactionRoutes); // general/user tx routes
+app.use("/api/transactions", guestRoutes);       // adds POST /guest etc.
+app.use("/api", statusRoutes);                   // e.g. /api/transactions/guest/complete
 
 // Admin
 app.use("/api/admin", adminRoutes);
+
+// Optional: “simple” guest route (avoid overlapping with guestRoutes)
+// app.use("/api", guestTxSimpleRoutes);
 
 /* -----------------------------
    Root
@@ -146,11 +93,11 @@ app.get("/", (_req, res) => {
 })();
 
 /* -----------------------------
-   Debug: list registered routes to console
+   Debug: list registered routes
 ----------------------------- */
-function listRoutes(appInstance) {
+function listRoutes(app) {
   console.log("📌 Registered routes:");
-  appInstance._router.stack.forEach((middleware) => {
+  app._router.stack.forEach((middleware) => {
     if (middleware.route) {
       const methods = Object.keys(middleware.route.methods)
         .map((m) => m.toUpperCase())
