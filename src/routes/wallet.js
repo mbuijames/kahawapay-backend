@@ -15,8 +15,9 @@ const router = express.Router();
 router.get("/deposit-address", (req, res) => {
   const address = process.env.BITCOIN_APP_ADDRESS || "";
   if (!address) {
-    // Helps diagnose env loading issues
-    return res.status(500).json({ error: "BITCOIN_APP_ADDRESS not set" });
+    return res.status(503).json({
+      error: "Deposit address not configured. Set BITCOIN_APP_ADDRESS in environment.",
+    });
   }
   return res.json({ address });
 });
