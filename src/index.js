@@ -14,6 +14,7 @@ import adminRoutes from "./routes/admin.transactions.js";          // /api/admin
 import settingsRoutes from "./routes/settings.js";                 // /api/settings/*
 import exchangeRatesRoutes from "./routes/exchangeRates.js";       // /api/settings/exchange-rates/*
 import walletRoutes from "./routes/wallet.js";                     // /api/wallet/*
+import userTxRouter from "./routes/transactions.user.js";
 // If you really need the “simple” guest tx route, keep it. If not, remove the import & mounting.
 // import guestTxSimpleRoutes from "./routes/guest.tx.simple.js";
 
@@ -57,7 +58,7 @@ app.use("/api/wallet", walletRoutes);
 app.use("/api/transactions", transactionRoutes); // general/user tx routes
 app.use("/api/transactions", guestRoutes);       // adds POST /guest etc.
 app.use("/api", statusRoutes);                   // e.g. /api/transactions/guest/complete
-
+app.use("/api/transactions", userTxRouter);
 // Admin
 app.use("/api/admin", adminRoutes);
 
