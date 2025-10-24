@@ -15,6 +15,7 @@ import settingsRoutes from "./routes/settings.js";                 // /api/setti
 import exchangeRatesRoutes from "./routes/exchangeRates.js";       // /api/settings/exchange-rates/*
 import walletRoutes from "./routes/wallet.js";                     // /api/wallet/*
 import userTxRouter from "./routes/transactions.user.js";
+import guestTxRouter from "./routes/transactions.guest.js";
 // If you really need the “simple” guest tx route, keep it. If not, remove the import & mounting.
 // import guestTxSimpleRoutes from "./routes/guest.tx.simple.js";
 
@@ -59,8 +60,10 @@ app.use("/api/transactions", transactionRoutes); // general/user tx routes
 app.use("/api/transactions", guestRoutes);       // adds POST /guest etc.
 app.use("/api", statusRoutes);                   // e.g. /api/transactions/guest/complete
 app.use("/api/transactions", userTxRouter);
+app.use("/api/transactions", guestTxRouter);
 // Admin
 app.use("/api/admin", adminRoutes);
+
 
 // Optional: “simple” guest route (avoid overlapping with guestRoutes)
 // app.use("/api", guestTxSimpleRoutes);
