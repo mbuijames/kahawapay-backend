@@ -17,17 +17,30 @@ import exchangeRatesRoutes from "./routes/exchangeRates.js";       // /api/setti
 import walletRoutes from "./routes/wallet.js";                     // /api/wallet/*
 // If you really need the “simple” guest tx route, keep it. If not, remove the import & mounting.
 // import guestTxSimpleRoutes from "./routes/guest.tx.simple.js";
+import path from "path";
+import { fileURLToPath } from "url";
+
+
 
 dotenv.config();
 
 const app = express();
-
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 /* -----------------------------
    Global middleware
 ----------------------------- */
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+// 1) API routes first
+app.use("/api", apiRouter);
+
+// 3) SPA fallback (for anything NOT starting with /api)
+app.get("*", (req, res) => {
+  if (req.path.startsWith("/api/")) return res.status(404).end();
+  res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
+});
 
 // Disable caching globally (place BEFORE routes)
 app.use((req, res, next) => {
