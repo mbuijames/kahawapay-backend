@@ -18,9 +18,6 @@ import walletRoutes from "./routes/wallet.js";                   // /api/wallet/
 dotenv.config();
 
 const app = express();
-app.post("/api/transactions/guest/preview", (req, res) => {
-  res.json({ ok: true, reached: "index.js catchall for /api/transactions/guest/preview" });
-});
 
 /* -----------------------------
    Global middleware
@@ -29,7 +26,7 @@ app.post("/api/transactions/guest/preview", (req, res) => {
 // CORS (allow list via env or allow all if unset)
 const corsOrigins = (process.env.CORS_ORIGINS || "")
   .split(",")
-  .map(s => s.trim())
+  .map((s) => s.trim())
   .filter(Boolean);
 
 app.use(
@@ -41,6 +38,21 @@ app.use(
 
 app.use(express.json());
 
+// 🔎 Log every request (helps verify what reaches Node in prod)
+app.use((req, _res, next) => {
+  console.log("REQ", req.method, req.originalUrl);
+  next();
+});
+
+// 🧪 TEMP sanity route: proves Node sees this exact path
+// Remove after confirming guest preview works end-to-end.
+app.post("/api/transactions/guest/preview", (req, res) => {
+  res.json({
+    ok: true,
+    reached: "index.js temp /api/transactions/guest/preview",
+  });
+});
+
 // Disable caching globally (place BEFORE routes)
 app.use((req, res, next) => {
   res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -50,9 +62,33 @@ app.use((req, res, next) => {
 });
 
 /* -----------------------------
-   Healthcheck
+   Healthcheck & route inspector
 ----------------------------- */
 app.get("/api/health", (_req, res) => res.json({ ok: true }));
+
+// 🔎 List registered routes (debug). Remove after debugging.
+app.get("/__routes", (_req, res) => {
+  const out = [];
+  const stack = app._router?.stack || [];
+  const walk = (prefix, layer) => {
+    if (layer.route?.path) {
+      const methods = Object.keys(layer.route.methods)
+        .map((m) => m.toUpperCase())
+        .join(",");
+      out.push(`${methods} ${prefix}${layer.route.path}`);
+    } else if (layer.name === "router" && layer.handle?.stack) {
+      // Infer base from regexp for common prefixes
+      const rx = layer.regexp?.toString() || "";
+      const base =
+        rx.includes("\\/api\\/transactions") ? "/api/transactions" :
+        rx.includes("\\/api\\b") ? "/api" :
+        "";
+      layer.handle.stack.forEach((l) => walk(base, l));
+    }
+  };
+  stack.forEach((l) => walk("", l));
+  res.json({ routes: out });
+});
 
 /* -----------------------------
    Routes (each mounted ONCE)
@@ -70,14 +106,14 @@ app.use("/api/wallet", walletRoutes);
 
 // Transactions — definitive mounts
 // Final paths provided by these routers:
-//  - POST /api/transactions/preview      (logged-in preview)
-//  - POST /api/transactions              (logged-in create)
-//  - POST /api/transactions/guest/preview  (guest preview)
-//  - POST /api/transactions/guest          (guest create)
+//  - POST /api/transactions/preview          (logged-in preview)
+//  - POST /api/transactions                  (logged-in create)
+//  - POST /api/transactions/guest/preview    (guest preview)
+//  - POST /api/transactions/guest            (guest create)
 app.use("/api/transactions", userTxRouter);
 app.use("/api/transactions", guestTxRouter);
 
-// Guest status/complete callbacks (keep base at /api if the router defines /transactions/guest/complete etc.)
+// Guest status/complete callbacks (router defines e.g. /transactions/guest/complete)
 app.use("/api", statusRoutes);
 
 // Admin
@@ -110,7 +146,7 @@ app.get("/", (_req, res) => {
 })();
 
 /* -----------------------------
-   Debug: list registered routes
+   Debug: list registered routes to console
 ----------------------------- */
 function listRoutes(appInstance) {
   console.log("📌 Registered routes:");
