@@ -85,40 +85,31 @@ async function createSequentialGuestUser() {
  * Body: { recipient_msisdn, amount_crypto_btc, currency? }
  * Responds: { sender_email, amount_recipient, currency, recipient_msisdn, amount_usd, fee_total }
  * ========================================================= */
+// PREVIEW — no DB write, no 403 on limit
 router.post("/guest/preview", async (req, res) => {
   try {
     const raw = { ...(req.body || {}) };
     const { recipient_msisdn, amount_crypto_btc, currency } = validateGuestPayload(raw);
 
-    // Compute values (no DB write)
     const { amount_usd, fee_total, recipient_amount } = await computeFromBtc({
       amount_crypto_btc,
       currency,
     });
 
-    // Enforce limit at preview too (UX & safety)
-    if (Number(amount_usd) > GUEST_TX_LIMIT_USD) {
-      return res.status(403).json({
-        error: `Guests cannot exceed $${GUEST_TX_LIMIT_USD}`,
-      });
-    }
-
-    // Return computed values only
+    // DO NOT block here; let frontend show the inline message
     return res.json({
       sender_email: "guest-preview@kahawapay.com",
-      amount_recipient: to2(recipient_amount), // local currency amount
+      amount_recipient: to2(recipient_amount),
       currency,
       recipient_msisdn,
       amount_usd: to2(amount_usd),
       fee_total: to2(fee_total),
     });
   } catch (err) {
-    console.error("🔥 Guest Preview error:", err);
-    return res
-      .status(err.status || 500)
-      .json({ error: "Failed to preview transaction", details: err.message });
+    return res.status(err.status || 500).json({ error: "Failed to preview transaction", details: err.message });
   }
 });
+
 
 /* =========================================================
  *                 CREATE (AFTER SUBMIT)
