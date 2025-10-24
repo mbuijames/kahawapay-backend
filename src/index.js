@@ -16,16 +16,7 @@ import exchangeRatesRoutes from "./routes/exchangeRates.js";     // /api/setting
 import walletRoutes from "./routes/wallet.js";                   // /api/wallet/*
 
 dotenv.config();
-// Put right after const app = express();
-const WHOAMI = {
-  app: "kahawapay-backend:index.js",
-  sha: process.env.RENDER_GIT_COMMIT || "local-dev",
-  node: process.version,
-  startedAt: new Date().toISOString(),
-};
-console.log("BOOT:", WHOAMI);
 
-app.get("/__whoami", (_req, res) => res.json(WHOAMI));
 const app = express();
 
 /* -----------------------------
