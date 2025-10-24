@@ -6,19 +6,19 @@ import { computeFromBtc, to2 } from "../helpers/transactions.js";
 
 const router = express.Router();
 
-// Read guest limit from ENV (default 100 USD if not set)
+// One source of truth for guest limit (default 100 if unset)
 const GUEST_TX_LIMIT_USD = Number(process.env.GUEST_TX_LIMIT_USD ?? 100);
 
 /** Resolve supported currencies from ENV (fallback to KES/UGX/TZS) */
 function getSupportedCurrencies() {
   const fromEnv = (process.env.SUPPORTED_CURRENCIES || "KES,UGX,TZS")
     .split(",")
-    .map((s) => s.trim().toUpperCase())
+    .map(s => s.trim().toUpperCase())
     .filter(Boolean);
   return fromEnv.length ? fromEnv : ["KES", "UGX", "TZS"];
 }
 
-/** Tiny validation helper (no extra deps) */
+/** Validate & normalize incoming payload */
 function validateGuestPayload(body) {
   const errors = [];
 
@@ -73,27 +73,34 @@ async function createSequentialGuestUser() {
     FROM next_num
     RETURNING id, email;
   `;
+  // Use SELECT here because RETURNING yields rows
   const rows = await sequelize.query(sql, { type: QueryTypes.SELECT });
-  const row = rows[0];
+  const row = rows?.[0];
   if (!row?.id) throw new Error("Failed to create guest user (no ID returned)");
   return { id: row.id, email: row.email };
 }
 
 /* =========================================================
- *                 PREVIEW (NO DB INSERT)
+ * PREVIEW (NO DB INSERT)
  * POST /api/transactions/guest/preview
  * Body: { recipient_msisdn, amount_crypto_btc, currency? }
  * Responds: { sender_email, amount_recipient, currency, recipient_msisdn, amount_usd, fee_total }
  * ========================================================= */
-// PREVIEW — no DB write, no 403 on limit
 router.post("/guest/preview", async (req, res) => {
   try {
-    const { amount_crypto_btc, currency, recipient_msisdn } = validateGuestPayload(req.body || {});
-    const { amount_usd, fee_total, recipient_amount } = await computeFromBtc({ amount_crypto_btc, currency });
+    const { amount_crypto_btc, currency, recipient_msisdn } =
+      validateGuestPayload(req.body || {});
 
-    const LIMIT = Number(process.env.GUEST_TX_LIMIT_USD ?? 100);
-    if (Number(amount_usd) > LIMIT) {
-      return res.status(403).json({ error: `Guests cannot exceed $${LIMIT}` });
+    const { amount_usd, fee_total, recipient_amount } = await computeFromBtc({
+      amount_crypto_btc,
+      currency,
+    });
+
+    // Enforce limit at preview time (return a clear JSON 403)
+    if (Number(amount_usd) > GUEST_TX_LIMIT_USD) {
+      return res
+        .status(403)
+        .json({ error: `Guests cannot exceed $${GUEST_TX_LIMIT_USD}` });
     }
 
     return res.json({
@@ -105,20 +112,21 @@ router.post("/guest/preview", async (req, res) => {
       fee_total: to2(fee_total),
     });
   } catch (err) {
-    return res.status(err.status || 500).json({ error: "Failed to preview transaction", details: err.message });
+    return res
+      .status(err.status || 500)
+      .json({ error: "Failed to preview transaction", details: err.message });
   }
 });
 
-
 /* =========================================================
- *                 CREATE (AFTER SUBMIT)
+ * CREATE (AFTER SUBMIT)
  * POST /api/transactions/guest
  * Body: { recipient_msisdn, amount_crypto_btc, currency? }
  * Responds: { sender_email, amount_recipient, currency, recipient_msisdn, amount_usd, status, id }
  * ========================================================= */
 router.post("/guest", async (req, res) => {
   try {
-    // 0) Validate + normalize input (and never accept client-sent IDs)
+    // 0) Validate + normalize input (never accept client-sent IDs/admin flags)
     const raw = { ...(req.body || {}) };
     delete raw.user_id;
     delete raw.userid;
@@ -127,61 +135,8 @@ router.post("/guest", async (req, res) => {
 
     const { recipient_msisdn, amount_crypto_btc, currency } = validateGuestPayload(raw);
 
-    // 1) Create guest user (sequential) — only on CREATE
+    // 1) Create guest user (only on CREATE)
     const { id: guestUserId, email: guestEmail } = await createSequentialGuestUser();
 
-    // 2) Compute from BTC
-    const { amount_usd, fee_total, recipient_amount } = await computeFromBtc({
-      amount_crypto_btc,
-      currency,
-    });
-
-    // 3) Enforce guest USD limit (from ENV, default 100)
-    if (Number(amount_usd) > GUEST_TX_LIMIT_USD) {
-      return res.status(403).json({
-        error: `Guests cannot complete transactions above $${GUEST_TX_LIMIT_USD}. Please login.`,
-      });
-    }
-
-    // 4) Insert transaction (now it can appear in admin panel)
-    const insertSql = `
-      INSERT INTO public.transactions
-        (user_id, recipient_msisdn, amount_usd, amount_crypto_btc,
-         fee_total, recipient_amount, currency, status, created_at)
-      VALUES
-        ($1::integer, $2::text, $3::numeric(12,2), $4::numeric(18,8),
-         $5::numeric(12,2), $6::numeric(12,2), $7::varchar(10), 'pending', NOW())
-      RETURNING id, recipient_msisdn, recipient_amount, currency, status, created_at;
-    `;
-    const bind = [
-      Number(guestUserId),
-      recipient_msisdn,
-      to2(amount_usd),
-      amount_crypto_btc,
-      to2(fee_total),
-      to2(recipient_amount),
-      currency,
-    ];
-    const rows = await sequelize.query(insertSql, { bind, type: QueryTypes.SELECT });
-    const tx = rows[0];
-
-    // 5) Respond with fields the UI can use
-    return res.json({
-      sender_email: guestEmail,
-      amount_recipient: to2(recipient_amount), // local currency amount
-      currency: tx.currency,
-      recipient_msisdn: tx.recipient_msisdn,
-      amount_usd: to2(amount_usd),
-      status: tx.status,
-      id: tx.id,
-    });
-  } catch (err) {
-    console.error("🔥 Guest TX error:", err);
-    return res.status(err.status || 500).json({
-      error: "Failed to create guest transaction",
-      details: err.message,
-    });
-  }
-});
-
-export default router;
+    // 2) Compute settlement figures
+    const { amount_usd, fee_total, recipient_amount } = awa_
