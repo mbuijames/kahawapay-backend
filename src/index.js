@@ -18,6 +18,9 @@ import walletRoutes from "./routes/wallet.js";                   // /api/wallet/
 dotenv.config();
 
 const app = express();
+app.post("/api/transactions/guest/preview", (req, res) => {
+  res.json({ ok: true, reached: "index.js catchall for /api/transactions/guest/preview" });
+});
 
 /* -----------------------------
    Global middleware
