@@ -2,45 +2,33 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-
+import path from "path";
+import { fileURLToPath } from "url";
 
 import sequelize from "./db.js";
 
 // Routers
-
 import authRoutes from "./routes/auth.js";
-import transactionRoutes from "./routes/transactions.js";          // user + general tx
-import guestRoutes from "./routes/transactions.guest.js";          // POST /guest
-import statusRoutes from "./routes/transactions.status.js";        // guest complete/status
-import adminRoutes from "./routes/admin.transactions.js";          // /api/admin/*
-import settingsRoutes from "./routes/settings.js";                 // /api/settings/*
-import exchangeRatesRoutes from "./routes/exchangeRates.js";       // /api/settings/exchange-rates/*
-import walletRoutes from "./routes/wallet.js";                     // /api/wallet/*
-// If you really need the “simple” guest tx route, keep it. If not, remove the import & mounting.
-// import guestTxSimpleRoutes from "./routes/guest.tx.simple.js";
-import path from "path";
-import { fileURLToPath } from "url";
-
-
+import transactionRoutes from "./routes/transactions.js";     // user + general tx
+import guestRoutes from "./routes/transactions.guest.js";     // POST /guest + /guest/preview
+import statusRoutes from "./routes/transactions.status.js";   // guest complete/status (mounted at /api)
+import adminRoutes from "./routes/admin.transactions.js";     // /api/admin/*
+import settingsRoutes from "./routes/settings.js";            // /api/settings/*
+import exchangeRatesRoutes from "./routes/exchangeRates.js";  // /api/settings/exchange-rates/*
+import walletRoutes from "./routes/wallet.js";                // /api/wallet/*
 
 dotenv.config();
 
 const app = express();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 /* -----------------------------
    Global middleware
 ----------------------------- */
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-
-// 3) SPA fallback (for anything NOT starting with /api)
-app.get("*", (req, res) => {
-  if (req.path.startsWith("/api/")) return res.status(404).end();
-  res.sendFile(path.join(__dirname, "../frontend/dist/index.html"));
-});
 
 // Disable caching globally (place BEFORE routes)
 app.use((req, res, next) => {
@@ -70,14 +58,11 @@ app.use("/api/wallet", walletRoutes);
 
 // Transactions
 app.use("/api/transactions", transactionRoutes); // general/user tx routes
-app.use("/api/transactions", guestRoutes);       // adds POST /guest etc.
+app.use("/api/transactions", guestRoutes);       // adds /guest and /guest/preview
 app.use("/api", statusRoutes);                   // e.g. /api/transactions/guest/complete
 
 // Admin
 app.use("/api/admin", adminRoutes);
-
-// Optional: “simple” guest route (avoid overlapping with guestRoutes)
-// app.use("/api", guestTxSimpleRoutes);
 
 /* -----------------------------
    Root
@@ -85,6 +70,22 @@ app.use("/api/admin", adminRoutes);
 app.get("/", (_req, res) => {
   res.send("✅ KahawaPay Backend is running");
 });
+
+/* -----------------------------
+   OPTIONAL: Serve SPA from backend
+   (Only if you deploy the frontend build with this service.)
+   Keep this AFTER all /api routes so it can't swallow them.
+----------------------------- */
+// Uncomment ONLY if the backend should serve your built frontend.
+// import fs from "fs";
+// const distDir = path.join(__dirname, "../frontend/dist");
+// if (fs.existsSync(distDir)) {
+//   app.use(express.static(distDir));
+//   app.get("*", (req, res, next) => {
+//     if (req.path.startsWith("/api/")) return next(); // let API routes handle it
+//     res.sendFile(path.join(distDir, "index.html"));
+//   });
+// }
 
 /* -----------------------------
    DB connect
@@ -108,9 +109,9 @@ app.get("/", (_req, res) => {
 /* -----------------------------
    Debug: list registered routes
 ----------------------------- */
-function listRoutes(app) {
+function listRoutes(appInstance) {
   console.log("📌 Registered routes:");
-  app._router.stack.forEach((middleware) => {
+  appInstance._router.stack.forEach((middleware) => {
     if (middleware.route) {
       const methods = Object.keys(middleware.route.methods)
         .map((m) => m.toUpperCase())
@@ -138,4 +139,3 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running at http://localhost:${PORT}`);
 });
-
