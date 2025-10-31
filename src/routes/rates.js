@@ -1,6 +1,6 @@
 // src/routes/rates.js
 import express from "express";
-import { fetchRates } from "../fetchRates.js";
+import { fetchRates } from "../utils/fetchRates.js";
 
 const router = express.Router();
 
