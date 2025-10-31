@@ -1,12 +1,13 @@
 {
   "name": "kahawapay-backend",
-  "version": "1.0.0",
-  "description": "KahawaPay backend for BTC tipping and remittance with JWT auth",
+  "version": "1.1.0",
+  "description": "KahawaPay backend for BTC tipping, remittance, and exchange rate API with JWT auth",
   "main": "src/index.js",
   "type": "module",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "lint": "eslint ."
   },
   "keywords": [
     "express",
@@ -14,19 +15,22 @@
     "remittance",
     "auth",
     "jwt",
+    "exchange-rates",
     "backend"
   ],
-  "author": "Your Name",
+  "author": "KahawaPay Dev Team",
   "license": "MIT",
   "dependencies": {
     "axios": "^1.7.2",
     "bcrypt": "^6.0.0",
     "bcryptjs": "^3.0.2",
     "body-parser": "^1.20.2",
+    "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^4.19.2",
     "jsonwebtoken": "^9.0.2",
+    "node-cache": "^5.1.2",
     "pg": "^8.16.3",
     "pg-hstore": "^2.3.4",
     "qrcode": "^1.5.4",
@@ -35,6 +39,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "nodemon": "^3.1.0",
+    "eslint": "^9.11.1"
   }
 }
