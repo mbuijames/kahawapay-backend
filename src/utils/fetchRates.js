@@ -1,6 +1,6 @@
 // src/utils/fetchRates.js
 import axios from "axios";
-import cheerio from "cheerio";
+import { load } from "cheerio";
 import NodeCache from "node-cache";
 
 const cache = new NodeCache({ stdTTL: 600 }); // cache for 10 minutes
@@ -20,7 +20,7 @@ export async function fetchRates() {
     let kesRate = null;
     try {
       const cbkRes = await axios.get("https://www.centralbank.go.ke/rates/forex-exchange-rates/");
-      const $cbk = cheerio.load(cbkRes.data);
+      const $cbk = load(cbkRes.data);
       // Attempt a few selector strategies, tolerant to layout changes
       const cbkCells = $cbk("table tbody tr td");
       if (cbkCells.length >= 2) {
@@ -38,7 +38,7 @@ export async function fetchRates() {
     let ugxRate = null;
     try {
       const bouRes = await axios.get("https://www.bou.or.ug/bou/rates_statistics/statistics/exchange_rates.html");
-      const $bou = cheerio.load(bouRes.data);
+      const $bou = load(bouRes.data);
       // find row containing 'US Dollar' (tolerant)
       $bou("tr").each((i, tr) => {
         const text = $bou(tr).text();
@@ -60,7 +60,7 @@ export async function fetchRates() {
     let tzsRate = null;
     try {
       const botRes = await axios.get("https://www.bot.go.tz/ExchangeRate/excRates");
-      const $bot = cheerio.load(botRes.data);
+      const $bot = load(botRes.data);
       $bot("tr").each((i, tr) => {
         const t = $bot(tr).text();
         if (/\bUSD\b/i.test(t)) {
@@ -79,7 +79,7 @@ export async function fetchRates() {
     let inrRate = null;
     try {
       const rbiRes = await axios.get("https://www.rbi.org.in/");
-      const $rbi = cheerio.load(rbiRes.data);
+      const $rbi = load(rbiRes.data);
       const bodyText = $rbi("body").text();
       const inrMatch = bodyText.match(/1\s*USD\s*=\s*([\d,]+\.\d+|[\d,]+)/i);
       if (inrMatch && inrMatch[1]) {
@@ -103,7 +103,6 @@ export async function fetchRates() {
     return data;
   } catch (err) {
     console.error("Rate fetch error:", err && err.message ? err.message : err);
-    // Return a helpful error to caller so /api/rates can reply 500
     throw new Error("Failed to fetch exchange rates");
   }
 }
