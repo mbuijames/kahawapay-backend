@@ -4,6 +4,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
+import ratesRoutes from "./routes/rates.js";
 
 import sequelize from "./db.js";
 
@@ -60,6 +61,9 @@ app.use("/api/wallet", walletRoutes);
 app.use("/api/transactions", transactionRoutes); // general/user tx routes
 app.use("/api/transactions", guestRoutes);       // adds /guest and /guest/preview
 app.use("/api", statusRoutes);                   // e.g. /api/transactions/guest/complete
+
+// Public exchange rates endpoint
+app.use("/api/rates", ratesRoutes);
 
 // Admin
 app.use("/api/admin", adminRoutes);
