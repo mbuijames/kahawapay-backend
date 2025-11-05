@@ -1,16 +1,24 @@
-// src/routes/rates.js
+// server/routes/rates.js
 import express from "express";
-import { fetchRates } from "../utils/fetchRates.js";
-
+import { fetchRates } from "../utils/fetchRates";
 const router = express.Router();
 
-// GET /api/rates
-router.get("/", async (req, res) => {
+router.get("/api/rates", async (req, res) => {
   try {
-    const rates = await fetchRates();
-    res.json(rates);
+    const data = await fetchRatesServer();
+    res.json({
+      rates: {
+        "US Dollar": data.kesUsd,
+        "Uganda Shilling": data.ugxUsd,
+        "Tanzanian Shilling": data.tzsUsd,
+        "Indian Rupee": data.inrUsd,
+        bitcoinUsd: data.bitcoinUsd,
+      },
+      fetchedAt: data.lastUpdated,
+      source: data.source,
+    });
   } catch (err) {
-    res.status(500).json({ error: "Failed to fetch exchange rates" });
+    res.status(502).json({ error: "failed to fetch rates" });
   }
 });
 
