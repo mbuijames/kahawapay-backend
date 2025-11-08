@@ -1,6 +1,6 @@
-// server/utils/fetchRates.js  (server-only Node file)
+// server/utils/fetchRates.js   <-- server-only (Node), exports named `fetchRates`
 import axios from 'axios';
-import { load } from 'cheerio';       // <- fixed import
+import { load } from 'cheerio';
 import NodeCache from 'node-cache';
 
 const cache = new NodeCache({ stdTTL: 600 });
@@ -12,7 +12,7 @@ function safeNumber(s) {
   return Number.isFinite(n) ? n : null;
 }
 
-export async function fetchRatesServer() {
+export async function fetchRates() {
   const cached = cache.get('kahawapay_rates');
   if (cached) return cached;
 
@@ -30,24 +30,19 @@ export async function fetchRatesServer() {
   try {
     // BTC (CoinGecko)
     try {
-      const btcRes = await axios.get(
-        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
-        { timeout: 10000 }
-      );
+      const btcRes = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', { timeout: 10000 });
       out.bitcoinUsd = safeNumber(btcRes?.data?.bitcoin?.usd ?? null);
       out.raw.btc = btcRes.data;
     } catch (e) {
       console.warn('[fetchRates] coinGecko error', e?.message || e);
     }
 
-    // KES (CBK)
+    // KES (CBK) - heuristic extraction
     try {
       const cbkRes = await axios.get('https://www.centralbank.go.ke/rates/forex-exchange-rates/', { timeout: 15000 });
       out.raw.cbk = cbkRes.data.slice(0, 2000);
-      const $ = load(cbkRes.data);                     // <- use load()
-      const usdRow = $('table tbody tr').filter((i, el) =>
-        $(el).text().toLowerCase().includes('us dollar')
-      ).first();
+      const $ = load(cbkRes.data);
+      const usdRow = $('table tbody tr').filter((i, el) => $(el).text().toLowerCase().includes('us dollar')).first();
       const kesText = usdRow.length ? usdRow.find('td').last().text() : null;
       out.kesUsd = safeNumber(kesText);
     } catch (e) {
@@ -59,9 +54,7 @@ export async function fetchRatesServer() {
       const bouRes = await axios.get('https://www.bou.or.ug/bou/rates_statistics/statistics/exchange_rates.html', { timeout: 15000 });
       out.raw.bou = bouRes.data.slice(0, 2000);
       const $b = load(bouRes.data);
-      const ugxRow = $b('table tbody tr').filter((i, el) =>
-        $b(el).text().toLowerCase().includes('us dollar')
-      ).first();
+      const ugxRow = $b('table tbody tr').filter((i, el) => $b(el).text().toLowerCase().includes('us dollar')).first();
       out.ugxUsd = safeNumber(ugxRow.length ? ugxRow.find('td').eq(1).text() : null);
     } catch (e) {
       console.warn('[fetchRates] BOU error', e?.message || e);
