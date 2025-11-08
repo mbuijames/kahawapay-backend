@@ -1,6 +1,6 @@
 // server/routes/rates.js
 import express from 'express';
-import { fetchRates } from '../utils/fetchRates';
+import { fetchRates } from '../utils/fetchRates.js';
 const router = express.Router();
 
 router.get("/api/rates", async (req, res) => {
