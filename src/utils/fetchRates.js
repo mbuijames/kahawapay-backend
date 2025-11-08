@@ -1,61 +1,73 @@
-// server/utils/fetchRates.server.js
-// Server-side: axios + cheerio + node-cache
-import axios from "axios";
-import cheerio from "cheerio";
-import NodeCache from "node-cache";
+// server/utils/fetchRates.server.js  (server-only - Node)
+import axios from 'axios';
+import cheerio from 'cheerio';
+import NodeCache from 'node-cache';
 
-const cache = new NodeCache({ stdTTL: 600 }); // 10 minutes
+const cache = new NodeCache({ stdTTL: 600 });
+
+function safeNumber(s) {
+  if (s === null || s === undefined) return null;
+  const cleaned = String(s).replace(/[^0-9.\-]/g, '').trim();
+  const n = parseFloat(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
 
 export async function fetchRatesServer() {
-  const cached = cache.get("kahawapay_rates");
+  const cached = cache.get('kahawapay_rates');
   if (cached) return cached;
 
+  const out = { bitcoinUsd: null, kesUsd: null, ugxUsd: null, tzsUsd: null, inrUsd: null, lastUpdated: new Date().toISOString(), source: 'server-scraper', raw: {} };
+
   try {
-    // BTC USD
-    const btcRes = await axios.get("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd");
-    const bitcoinUsd = btcRes.data?.bitcoin?.usd ?? null;
+    // BTC (CoinGecko)
+    try {
+      const btcRes = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', { timeout: 10000 });
+      out.bitcoinUsd = safeNumber(btcRes?.data?.bitcoin?.usd ?? null);
+      out.raw.btc = btcRes.data;
+    } catch (e) { console.warn('[fetchRates] coinGecko error', e?.message || e); }
 
-    // KES per USD (example — adapt selectors)
-    const cbkRes = await axios.get("https://www.centralbank.go.ke/rates/forex-exchange-rates/");
-    const $cbk = cheerio.load(cbkRes.data);
-    // You MUST inspect the actual CBK table and pick the correct selector
-    const kesRateText = $cbk("table tbody tr").filter((i, el) =>
-      $cbk(el).text().toLowerCase().includes("us dollar")
-    ).first().find("td").last().text();
-    const kesUsd = kesRateText ? parseFloat(kesRateText.replace(/,/g, "")) : null;
+    // KES (CBK)
+    try {
+      const cbkRes = await axios.get('https://www.centralbank.go.ke/rates/forex-exchange-rates/', { timeout: 15000 });
+      out.raw.cbk = cbkRes.data.slice(0, 2000);
+      const $ = cheerio.load(cbkRes.data);
+      const usdRow = $('table tbody tr').filter((i, el) => $(el).text().toLowerCase().includes('us dollar')).first();
+      const kesText = usdRow.length ? usdRow.find('td').last().text() : null;
+      out.kesUsd = safeNumber(kesText);
+    } catch (e) { console.warn('[fetchRates] CBK error', e?.message || e); }
 
-    // UGX example (adapt selector)
-    const bouRes = await axios.get("https://www.bou.or.ug/bou/rates_statistics/statistics/exchange_rates.html");
-    const $bou = cheerio.load(bouRes.data);
-    const ugxText = $bou("table tbody tr").filter((i, el) => $bou(el).text().includes("US Dollar")).first().find("td").eq(1).text();
-    const ugxUsd = ugxText ? parseFloat(ugxText.replace(/,/g, "")) : null;
+    // UGX (BOU)
+    try {
+      const bouRes = await axios.get('https://www.bou.or.ug/bou/rates_statistics/statistics/exchange_rates.html', { timeout: 15000 });
+      out.raw.bou = bouRes.data.slice(0, 2000);
+      const $b = cheerio.load(bouRes.data);
+      const ugxRow = $b('table tbody tr').filter((i, el) => $b(el).text().toLowerCase().includes('us dollar')).first();
+      out.ugxUsd = safeNumber(ugxRow.length ? ugxRow.find('td').eq(1).text() : null);
+    } catch (e) { console.warn('[fetchRates] BOU error', e?.message || e); }
 
-    // TZS example (adapt)
-    const botRes = await axios.get("https://www.bot.go.tz/");
-    const $bot = cheerio.load(botRes.data);
-    const ttzMatch = $bot("body").text().match(/US Dollar\\s*([\\d,\\.]+)/);
-    const tzsUsd = ttzMatch ? parseFloat(ttzMatch[1].replace(/,/g, "")) : null;
+    // TZS (BOT)
+    try {
+      const botRes = await axios.get('https://www.bot.go.tz/', { timeout: 15000 });
+      out.raw.bot = botRes.data.slice(0, 2000);
+      const $bot = cheerio.load(botRes.data);
+      const tMatch = $bot('body').text().match(/US Dollar\s*([\d,\.]+)/);
+      out.tzsUsd = safeNumber(tMatch ? tMatch[1] : null);
+    } catch (e) { console.warn('[fetchRates] BOT error', e?.message || e); }
 
-    // INR example
-    const rbiRes = await axios.get("https://rbi.org.in/");
-    const $rbi = cheerio.load(rbiRes.data);
-    const inrMatch = $rbi("body").text().match(/1 USD = ([\\d\\.]+)/);
-    const inrUsd = inrMatch ? parseFloat(inrMatch[1]) : null;
+    // INR (RBI)
+    try {
+      const rbiRes = await axios.get('https://rbi.org.in/', { timeout: 15000 });
+      out.raw.rbi = rbiRes.data.slice(0, 2000);
+      const $r = cheerio.load(rbiRes.data);
+      const iMatch = $r('body').text().match(/1 USD = ([\d\.]+)/);
+      out.inrUsd = safeNumber(iMatch ? iMatch[1] : null);
+    } catch (e) { console.warn('[fetchRates] RBI error', e?.message || e); }
 
-    const data = {
-      bitcoinUsd,
-      kesUsd,
-      ugxUsd,
-      tzsUsd,
-      inrUsd,
-      lastUpdated: new Date().toISOString(),
-      source: "server-scraper",
-    };
-
-    cache.set("kahawapay_rates", data);
-    return data;
+    out.lastUpdated = new Date().toISOString();
+    cache.set('kahawapay_rates', out);
+    return out;
   } catch (err) {
-    console.error("Rate fetch error:", err);
-    throw new Error("Unable to fetch rates on server");
+    console.error('[fetchRates] unexpected error', err);
+    throw err;
   }
 }
