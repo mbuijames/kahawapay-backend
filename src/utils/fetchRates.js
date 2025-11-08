@@ -1,4 +1,4 @@
-// server/utils/fetchRates.server.js  (server-only - Node)
+// server/utils/fetchRates.js  (server-only - Node)
 import axios from 'axios';
 import cheerio from 'cheerio';
 import NodeCache from 'node-cache';
