@@ -1,15 +1,22 @@
-// src/utils/fetchRates.js   <-- server-only (Node), exports named `fetchRates`
+// server/utils/fetchRates.js
+// Server-side scraper + cache. Uses axios + cheerio + node-cache.
+// Export: fetchRates()
+
 import axios from 'axios';
 import { load } from 'cheerio';
 import NodeCache from 'node-cache';
 
-const cache = new NodeCache({ stdTTL: 600 });
+const cache = new NodeCache({ stdTTL: 600 }); // 10 minutes
 
 function safeNumber(s) {
   if (s === null || s === undefined) return null;
-  const cleaned = String(s).replace(/[^0-9.\-]/g, '').trim();
-  const n = parseFloat(cleaned);
-  return Number.isFinite(n) ? n : null;
+  try {
+    const cleaned = String(s).replace(/[^0-9.\-]/g, '').trim();
+    const n = parseFloat(cleaned);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchRates() {
@@ -30,7 +37,10 @@ export async function fetchRates() {
   try {
     // BTC (CoinGecko)
     try {
-      const btcRes = await axios.get('https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd', { timeout: 10000 });
+      const btcRes = await axios.get(
+        'https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd',
+        { timeout: 10000 }
+      );
       out.bitcoinUsd = safeNumber(btcRes?.data?.bitcoin?.usd ?? null);
       out.raw.btc = btcRes.data;
     } catch (e) {
@@ -42,6 +52,7 @@ export async function fetchRates() {
       const cbkRes = await axios.get('https://www.centralbank.go.ke/rates/forex-exchange-rates/', { timeout: 15000 });
       out.raw.cbk = cbkRes.data.slice(0, 2000);
       const $ = load(cbkRes.data);
+      // find a row that contains "US Dollar"
       const usdRow = $('table tbody tr').filter((i, el) => $(el).text().toLowerCase().includes('us dollar')).first();
       const kesText = usdRow.length ? usdRow.find('td').last().text() : null;
       out.kesUsd = safeNumber(kesText);
