@@ -5,21 +5,44 @@ import bcrypt from "bcryptjs";
 
 const User = sequelize.define("User", {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
-  email: { type: DataTypes.STRING, allowNull: false, unique: true, validate: { isEmail: true } },
-  password: { type: DataTypes.STRING, allowNull: true }, // allow null/empty for guests
+
+  email: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true,
+    validate: { isEmail: true },
+  },
+
+  // allow null/empty for guests; we’ll hash only if non-empty and changed
+  password: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+
   role: { type: DataTypes.STRING(20), allowNull: false, defaultValue: "user" },
   is_guest: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+
+  // --- 2FA fields (fix for your login error) ---
+  twofa_enabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+  twofa_secret: { type: DataTypes.TEXT, allowNull: true },
+  twofa_backup_codes: { type: DataTypes.JSONB, allowNull: true },
+  twofa_verified_at: { type: DataTypes.DATE, allowNull: true },
+
+  // Optional but often referenced
+  email_verified_at: { type: DataTypes.DATE, allowNull: true },
+  last_login_at: { type: DataTypes.DATE, allowNull: true },
+
   created_at: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
 }, {
   tableName: "users",
-  timestamps: false,
+  timestamps: false, // keep as-is
 });
 
-User.beforeCreate(async (user) => {
-  if (user.password && user.password.trim().length > 0) {
-    user.password = await bcrypt.hash(user.password, 10);
-  } else {
-    user.password = ""; // or null, as long as DB allows it
+// Hash password only when it exists and has changed
+User.beforeSave(async (user) => {
+  if (user.changed("password")) {
+    const pwd = (user.password || "").trim();
+    user.password = pwd ? await bcrypt.hash(pwd, 10) : "";
   }
 });
 
