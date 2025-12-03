@@ -43,15 +43,17 @@ function signTemp2FAToken(user) {
 
 
 /* ---------------------------
-   REGISTER (PUBLIC)
+   REGISTER (PUBLIC) WITH OTP
 --------------------------- */
 router.post("/register", async (req, res) => {
   try {
     let { email, password } = req.body || {};
     email = String(email || "").trim().toLowerCase();
+
     if (!email || !password) {
       return res.status(400).json({ error: "Email and password are required" });
     }
+
     if (password.length < 6) {
       return res.status(400).json({ error: "Password must be at least 6 characters" });
     }
@@ -61,16 +63,39 @@ router.post("/register", async (req, res) => {
       return res.status(400).json({ error: "User already exists" });
     }
 
-    // Model hook should hash the password
-    const user = await User.create({ email, password, role: "user", is_guest: false });
+    // 1. Create user
+    const user = await User.create({
+      email,
+      password,
+      role: "user",
+      is_guest: false
+    });
 
-    const token = signFinalJWT(user);
-    return res.json({ token, role: user.role, email: user.email });
+    // 2. Generate OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // 3. Save OTP in DB
+    await sequelize.query(
+      `UPDATE public.users SET otp = :otp WHERE email = :email`,
+      { replacements: { otp, email }, type: QueryTypes.UPDATE }
+    );
+
+    // 4. Send OTP via email
+    await transporter.sendMail({
+      from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "Your KahawaPay OTP Code",
+      text: `Your OTP is ${otp}`,
+    });
+
+    return res.json({ message: "Registration successful. OTP sent." });
+
   } catch (err) {
     console.error("🔥 Register error:", err);
     return res.status(500).json({ error: "Server error: " + err.message });
   }
 });
+
 
 /* ---------------------------
    LOGIN (PUBLIC) with 2FA gate
