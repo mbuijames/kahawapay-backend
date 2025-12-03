@@ -385,7 +385,7 @@ async function testEmail() {
   try {
     await transporter.sendMail({
       from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
-      to: "your-email@example.com",
+      to: "mbuijames@gmail.com",
       subject: "Titan SMTP Test",
       text: "This is a test email via Titan SMTP!",
     });
