@@ -371,29 +371,31 @@ router.post("/2fa/disable", requireAuth, async (req, res) => {
   }
 });
 const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: process.env.EMAIL_PORT,
-  secure: process.env.EMAIL_SECURE === "true", // port 465
+  host: "mail.titan.email",
+  port: 465,             // use 587 if you prefer TLS
+  secure: true,          // true for 465, false for 587
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+    user: process.env.EMAIL_USER, // e.g., info@kahawapay.com
+    pass: process.env.EMAIL_PASS  // Titan email password
   }
 });
-router.get("/test-email", async (req, res) => {
+
+// Test email function
+async function testEmail() {
   try {
     await transporter.sendMail({
       from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
-      to: "mbuijames@gmail.com",
-      subject: "SMTP Test from Render",
-      text: "If you received this, SMTP works!",
+      to: "your-email@example.com",
+      subject: "Titan SMTP Test",
+      text: "This is a test email via Titan SMTP!",
     });
-
-    res.json({ message: "Test email sent!" });
-
-  } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.log("✅ Email sent successfully!");
+  } catch (err) {
+    console.error("❌ Email failed:", err);
   }
-});
+}
+
+testEmail();
 
 
 export default router;
