@@ -371,7 +371,7 @@ router.post("/2fa/disable", requireAuth, async (req, res) => {
   }
 });
 const transporter = nodemailer.createTransport({
-  host: "mail.titan.email",
+  host: "smtp.titan.email",
   port: 465,             // use 587 if you prefer TLS
   secure: true,          // true for 465, false for 587
   auth: {
