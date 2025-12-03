@@ -396,6 +396,12 @@ async function testEmail() {
 }
 
 testEmail();
-
+transporter.verify((err, success) => {
+  if (err) {
+    console.error("SMTP ERROR:", err);
+  } else {
+    console.log("SMTP OK!");
+  }
+});
 
 export default router;
