@@ -372,8 +372,8 @@ router.post("/2fa/disable", requireAuth, async (req, res) => {
 });
 const transporter = nodemailer.createTransport({
   host: "smtp.titan.email",
-  port: 587,             // use 587 if you prefer TLS
-  secure: false,          // true for 465, false for 587
+  port: 465,             // use 587 if you prefer TLS
+  secure: true,          // true for 465, false for 587
   auth: {
     user: process.env.EMAIL_USER, // e.g., info@kahawapay.com
     pass: process.env.EMAIL_PASS  // Titan email password
