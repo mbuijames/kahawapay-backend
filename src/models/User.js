@@ -24,7 +24,7 @@ const User = sequelize.define("User", {
 
   // --- 2FA fields (fix for your login error) ---
   twofa_enabled: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
-  twofa_secret: { type: DataTypes.TEXT, allowNull: true },
+  totp_secret:: { type: DataTypes.TEXT, allowNull: true },
   twofa_backup_codes: { type: DataTypes.JSONB, allowNull: true },
   twofa_verified_at: { type: DataTypes.DATE, allowNull: true },
 
