@@ -40,6 +40,7 @@ function signTemp2FAToken(user) {
   );
 }
 
+
 /* ---------------------------
    REGISTER (PUBLIC)
 --------------------------- */
@@ -343,5 +344,30 @@ router.post("/2fa/disable", requireAuth, async (req, res) => {
     return res.status(500).json({ error: "Failed to disable 2FA" });
   }
 });
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: process.env.EMAIL_PORT,
+  secure: process.env.EMAIL_SECURE === "true", // port 465
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS
+  }
+});
+router.get("/test-email", async (req, res) => {
+  try {
+    await transporter.sendMail({
+      from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
+      to: "mbuijames@gmail.com",
+      subject: "SMTP Test from Render",
+      text: "If you received this, SMTP works!",
+    });
+
+    res.json({ message: "Test email sent!" });
+
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 export default router;
