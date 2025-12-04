@@ -400,15 +400,7 @@ router.post("/2fa/disable", requireAuth, async (req, res) => {
     return res.status(500).json({ error: "Failed to disable 2FA" });
   }
 });
-const transporter = nodemailer.createTransport({
-  host: "smtp.titan.email",
-  port: 465,             // use 587 if you prefer TLS
-  secure: true,          // true for 465, false for 587
-  auth: {
-    user: process.env.EMAIL_USER, // e.g., info@kahawapay.com
-    pass: process.env.EMAIL_PASS  // Titan email password
-  }
-});
+
 /* ---------------------------
 // Test email function
 async function testEmail() {
