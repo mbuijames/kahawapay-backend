@@ -73,12 +73,39 @@ router.post("/register", async (req, res) => {
 
     // 2. Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
+     const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+
+await User.update(
+  { otp, otp_expiry: expiry },
+  { where: { email } }
+);
 
     // 3. Save OTP in DB
     await sequelize.query(
       `UPDATE public.users SET otp = :otp WHERE email = :email`,
       { replacements: { otp, email }, type: QueryTypes.UPDATE }
     );
+     const user = await User.findOne({ where: { email } });
+
+if (!user) return res.status(404).json({ error: "User not found" });
+
+// Check OTP value
+if (user.otp !== otp) {
+  return res.status(400).json({ error: "OTP verification failed" });
+}
+
+// Check if OTP is expired
+if (user.otp_expiry && new Date() > new Date(user.otp_expiry)) {
+  return res.status(400).json({ error: "OTP expired. Request a new one." });
+}
+
+// OTP is valid → clear it
+user.otp = null;
+user.otp_expiry = null;
+await user.save();
+
+res.json({ ok: true, message: "OTP verified successfully" });
+
 
     // 4. Send OTP via email
     await transporter.sendMail({
