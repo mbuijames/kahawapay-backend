@@ -11,9 +11,11 @@ import { QueryTypes } from "sequelize";
 import User from "../models/User.js";
 import requireAuth from "../middleware/requireAuth.js";
 import nodemailer from "nodemailer";
-import pool from "../config/db.js";
+import pool from "../db.js";
 
 const router = express.Router();
+const pool = require("../db");
+
 
 /* ---------------------------
    Helpers
