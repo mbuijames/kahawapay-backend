@@ -14,7 +14,7 @@ import nodemailer from "nodemailer";
 import pool from "../src/db.js";
 
 const router = express.Router();
-const pool = require("../src/db");
+
 
 
 /* ---------------------------
