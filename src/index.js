@@ -16,6 +16,7 @@ import adminRoutes from "./routes/admin.transactions.js";          // /api/admin
 import settingsRoutes from "./routes/settings.js";                 // /api/settings/*
 import exchangeRatesRoutes from "./routes/exchangeRates.js";       // /api/settings/exchange-rates/*
 import walletRoutes from "./routes/wallet.js";                     // /api/wallet/*
+import ratesRouter from "./routes/rates.js";
 // If you really need the “simple” guest tx route, keep it. If not, remove the import & mounting.
 // import guestTxSimpleRoutes from "./routes/guest.tx.simple.js";
 
@@ -30,6 +31,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/api/auth", authRoutes);
+app.use("/api/rates", ratesRouter);
 
 // Disable caching globally (place BEFORE routes)
 app.use((req, res, next) => {
