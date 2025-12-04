@@ -379,7 +379,7 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS  // Titan email password
   }
 });
-
+/* ---------------------------
 // Test email function
 async function testEmail() {
   try {
@@ -403,5 +403,5 @@ transporter.verify((err, success) => {
     console.log("SMTP OK!");
   }
 });
-
+--------------------------- */
 export default router;
