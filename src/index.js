@@ -32,6 +32,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api/rates", ratesRouter);
+app.use(ratesRouter);
 
 // Disable caching globally (place BEFORE routes)
 app.use((req, res, next) => {
