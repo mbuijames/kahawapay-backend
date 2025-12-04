@@ -6,15 +6,15 @@ import crypto from "crypto";
 import speakeasy from "speakeasy";
 import QRCode from "qrcode";
 
-import sequelize from "../db.js";
+import sequelize from "../src/db.js";
 import { QueryTypes } from "sequelize";
 import User from "../models/User.js";
 import requireAuth from "../middleware/requireAuth.js";
 import nodemailer from "nodemailer";
-import pool from "../db.js";
+import pool from "../src/db.js";
 
 const router = express.Router();
-const pool = require("../db");
+const pool = require("../src/db");
 
 
 /* ---------------------------
