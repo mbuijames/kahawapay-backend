@@ -71,22 +71,31 @@ router.post("/register", async (req, res) => {
     if (existing)
       return res.status(400).json({ error: "User already exists" });
 
-    // 1️⃣ Create user
-    const user = await User.create({ email, password, role: "user", is_guest: false });
+    // Create user
+    const user = await User.create({
+      email,
+      password,
+      role: "user",
+      is_guest: false,
+      is_verified: false
+    });
 
-    // 2️⃣ Generate OTP & expiry
+    // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 min
+    const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-    // 3️⃣ Save OTP in DB
-    await User.update({ otp, otp_expiry: expiry }, { where: { email } });
+    // SAVE OTP USING RAW SQL (Sequelize model does NOT include otp columns!)
+    await pool.query(
+      `UPDATE users SET otp = $1, otp_expiry = $2 WHERE email = $3`,
+      [otp, expiry, email]
+    );
 
-    // 4️⃣ Send OTP via email
+    // Send OTP
     await transporter.sendMail({
       from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: "Your KahawaPay OTP Code",
-      text: `Your OTP is ${otp}. It expires in 10 minutes.`,
+      text: `Your OTP is ${otp}. It expires in 5 minutes.`,
     });
 
     return res.json({ message: "Registration successful. OTP sent." });
@@ -97,33 +106,43 @@ router.post("/register", async (req, res) => {
   }
 });
 
-/* ---------------------------
-   VERIFY OTP (PUBLIC)
---------------------------- */
 router.post("/verify-otp", async (req, res) => {
   try {
-    const { email, otp } = req.body || {};
-    if (!email || !otp)
-      return res.status(400).json({ error: "Email and OTP are required" });
+    const { email, otp: otpProvided } = req.body;
 
-    const user = await User.findOne({ where: { email } });
-    if (!user) return res.status(404).json({ error: "User not found" });
+    if (!email || !otpProvided)
+      return res.status(400).json({ message: "Email and OTP required" });
 
-    if (user.otp !== otp) return res.status(400).json({ error: "OTP verification failed" });
+    const { rows } = await pool.query(
+      `SELECT otp, otp_expiry FROM users WHERE email = $1`,
+      [email]
+    );
 
-    if (user.otp_expiry && new Date() > new Date(user.otp_expiry))
-      return res.status(400).json({ error: "OTP expired. Request a new one." });
+    if (!rows.length)
+      return res.status(400).json({ message: "User not found" });
 
-    // OTP is valid → clear it
-    user.otp = null;
-    user.otp_expiry = null;
-    await user.save();
+    const user = rows[0];
 
-    return res.json({ ok: true, message: "OTP verified successfully" });
+    if (!user.otp)
+      return res.status(400).json({ message: "No OTP generated" });
+
+    if (new Date() > new Date(user.otp_expiry))
+      return res.status(400).json({ message: "OTP expired" });
+
+    if (user.otp !== otpProvided)
+      return res.status(400).json({ message: "Invalid OTP" });
+
+    // Mark verified + clear OTP
+    await pool.query(
+      `UPDATE users SET otp = NULL, otp_expiry = NULL, is_verified = true WHERE email = $1`,
+      [email]
+    );
+
+    return res.json({ message: "OTP verified successfully" });
 
   } catch (err) {
-    console.error("🔥 Verify OTP error:", err);
-    return res.status(500).json({ error: "Server error: " + err.message });
+    console.error("🔥 OTP verify error:", err);
+    res.status(500).json({ message: "Server error: " + err.message });
   }
 });
 
