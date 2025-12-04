@@ -42,6 +42,17 @@ function signTemp2FAToken(user) {
 }
 
 
+// Setup Nodemailer
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: Number(process.env.EMAIL_PORT),
+  secure: process.env.EMAIL_SECURE === "true",
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
 /* ---------------------------
    REGISTER (PUBLIC) WITH OTP
 --------------------------- */
@@ -50,69 +61,32 @@ router.post("/register", async (req, res) => {
     let { email, password } = req.body || {};
     email = String(email || "").trim().toLowerCase();
 
-    if (!email || !password) {
+    if (!email || !password)
       return res.status(400).json({ error: "Email and password are required" });
-    }
 
-    if (password.length < 6) {
+    if (password.length < 6)
       return res.status(400).json({ error: "Password must be at least 6 characters" });
-    }
 
     const existing = await User.findOne({ where: { email } });
-    if (existing) {
+    if (existing)
       return res.status(400).json({ error: "User already exists" });
-    }
 
-    // 1. Create user
-    const user = await User.create({
-      email,
-      password,
-      role: "user",
-      is_guest: false
-    });
+    // 1️⃣ Create user
+    const user = await User.create({ email, password, role: "user", is_guest: false });
 
-    // 2. Generate OTP
+    // 2️⃣ Generate OTP & expiry
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-     const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes from now
+    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 min
 
-await User.update(
-  { otp, otp_expiry: expiry },
-  { where: { email } }
-);
+    // 3️⃣ Save OTP in DB
+    await User.update({ otp, otp_expiry: expiry }, { where: { email } });
 
-    // 3. Save OTP in DB
-    await sequelize.query(
-      `UPDATE public.users SET otp = :otp WHERE email = :email`,
-      { replacements: { otp, email }, type: QueryTypes.UPDATE }
-    );
-     const user = await User.findOne({ where: { email } });
-
-if (!user) return res.status(404).json({ error: "User not found" });
-
-// Check OTP value
-if (user.otp !== otp) {
-  return res.status(400).json({ error: "OTP verification failed" });
-}
-
-// Check if OTP is expired
-if (user.otp_expiry && new Date() > new Date(user.otp_expiry)) {
-  return res.status(400).json({ error: "OTP expired. Request a new one." });
-}
-
-// OTP is valid → clear it
-user.otp = null;
-user.otp_expiry = null;
-await user.save();
-
-res.json({ ok: true, message: "OTP verified successfully" });
-
-
-    // 4. Send OTP via email
+    // 4️⃣ Send OTP via email
     await transporter.sendMail({
       from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
       to: email,
       subject: "Your KahawaPay OTP Code",
-      text: `Your OTP is ${otp}`,
+      text: `Your OTP is ${otp}. It expires in 10 minutes.`,
     });
 
     return res.json({ message: "Registration successful. OTP sent." });
@@ -123,6 +97,35 @@ res.json({ ok: true, message: "OTP verified successfully" });
   }
 });
 
+/* ---------------------------
+   VERIFY OTP (PUBLIC)
+--------------------------- */
+router.post("/verify-otp", async (req, res) => {
+  try {
+    const { email, otp } = req.body || {};
+    if (!email || !otp)
+      return res.status(400).json({ error: "Email and OTP are required" });
+
+    const user = await User.findOne({ where: { email } });
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    if (user.otp !== otp) return res.status(400).json({ error: "OTP verification failed" });
+
+    if (user.otp_expiry && new Date() > new Date(user.otp_expiry))
+      return res.status(400).json({ error: "OTP expired. Request a new one." });
+
+    // OTP is valid → clear it
+    user.otp = null;
+    user.otp_expiry = null;
+    await user.save();
+
+    return res.json({ ok: true, message: "OTP verified successfully" });
+
+  } catch (err) {
+    console.error("🔥 Verify OTP error:", err);
+    return res.status(500).json({ error: "Server error: " + err.message });
+  }
+});
 
 /* ---------------------------
    LOGIN (PUBLIC) with 2FA gate
