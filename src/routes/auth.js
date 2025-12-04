@@ -11,11 +11,8 @@ import { QueryTypes } from "sequelize";
 import User from "../models/User.js";
 import requireAuth from "../middleware/requireAuth.js";
 import nodemailer from "nodemailer";
-import pool from "../db.js";
 
 const router = express.Router();
-
-
 
 /* ---------------------------
    Helpers
@@ -43,7 +40,6 @@ function signTemp2FAToken(user) {
     { expiresIn: "10m" }
   );
 }
-
 
 // Setup Nodemailer
 const transporter = nodemailer.createTransport({
@@ -87,44 +83,15 @@ router.post("/register", async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-   // Assuming this is inside an async route handler
-try {
-  const { email } = req.body;
+    // Update OTP in DB
+    await sequelize.query(
+      `UPDATE users SET otp = :otp, otp_expiry = :expiry WHERE email = :email`,
+      { replacements: { otp, expiry: expiry.toISOString(), email }, type: QueryTypes.UPDATE }
+    );
 
-  // Safety checks
-  if (!email) {
-    return res.status(400).json({ error: "Email is required." });
-  }
-  if (!otp) {
-    return res.status(400).json({ error: "OTP is missing." });
-  }
-  if (!expiry) {
-    return res.status(400).json({ error: "OTP expiry is missing." });
-  }
+    console.log("✅ OTP set for user:", email);
 
-  // Log values for debugging
-  console.log("Updating OTP:", { email, otp, expiry });
-
-  // Execute the query safely
-  const result = await pool.query(
-    `UPDATE users SET otp = $1, otp_expiry = $2 WHERE email = $3`,
-    [otp, expiry, email]
-  );
-
-  if (result.rowCount === 0) {
-    // No user found with that email
-    return res.status(404).json({ error: "User not found." });
-  }
-
-  // Success response
-  res.json({ message: "OTP updated successfully." });
-
-} catch (error) {
-  console.error("Error updating OTP:", error.message);
-  res.status(500).json({ error: "Internal server error." });
-}
-
-    // Send OTP
+    // Send OTP email
     await transporter.sendMail({
       from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
       to: email,
@@ -140,6 +107,9 @@ try {
   }
 });
 
+/* ---------------------------
+   VERIFY OTP
+--------------------------- */
 router.post("/verify-otp", async (req, res) => {
   try {
     const { email, otp: otpProvided } = req.body;
@@ -147,9 +117,9 @@ router.post("/verify-otp", async (req, res) => {
     if (!email || !otpProvided)
       return res.status(400).json({ message: "Email and OTP required" });
 
-    const { rows } = await pool.query(
-      `SELECT otp, otp_expiry FROM users WHERE email = $1`,
-      [email]
+    const rows = await sequelize.query(
+      `SELECT otp, otp_expiry FROM users WHERE email = :email`,
+      { replacements: { email }, type: QueryTypes.SELECT }
     );
 
     if (!rows.length)
@@ -167,48 +137,41 @@ router.post("/verify-otp", async (req, res) => {
       return res.status(400).json({ message: "Invalid OTP" });
 
     // Mark verified + clear OTP
-    await pool.query(
-      `UPDATE users SET otp = NULL, otp_expiry = NULL, is_verified = true WHERE email = $1`,
-      [email]
+    await sequelize.query(
+      `UPDATE users SET otp = NULL, otp_expiry = NULL, is_verified = true WHERE email = :email`,
+      { replacements: { email }, type: QueryTypes.UPDATE }
     );
 
     return res.json({ message: "OTP verified successfully" });
-
   } catch (err) {
     console.error("🔥 OTP verify error:", err);
-    res.status(500).json({ message: "Server error: " + err.message });
+    return res.status(500).json({ message: "Server error: " + err.message });
   }
 });
 
 /* ---------------------------
-   LOGIN (PUBLIC) with 2FA gate
+   LOGIN (PUBLIC) with 2FA
 --------------------------- */
 router.post("/login", async (req, res) => {
   try {
     let { email, password } = req.body || {};
     email = String(email || "").trim().toLowerCase();
-    if (!email || !password) {
+    if (!email || !password)
       return res.status(400).json({ error: "Email and password are required" });
-    }
 
     const user = await User.findOne({ where: { email } });
-    if (!user) {
+    if (!user)
       return res.status(401).json({ error: "Invalid email or password" });
-    }
 
     const ok = await bcrypt.compare(password, user.password);
-    if (!ok) {
+    if (!ok)
       return res.status(401).json({ error: "Invalid email or password" });
-    }
 
-    // IMPORTANT: read twofa_enabled directly from DB to avoid model/attr mismatch
     const rows = await sequelize.query(
-      `SELECT id, email, role, twofa_enabled
-       FROM public.users
-       WHERE id = :id
-       LIMIT 1`,
+      `SELECT id, email, role, twofa_enabled FROM users WHERE id = :id LIMIT 1`,
       { replacements: { id: user.id }, type: QueryTypes.SELECT }
     );
+
     const dbUser = rows[0] || { id: user.id, email: user.email, role: user.role, twofa_enabled: false };
 
     if (dbUser.twofa_enabled) {
@@ -218,6 +181,7 @@ router.post("/login", async (req, res) => {
 
     const token = signFinalJWT(dbUser);
     return res.json({ token, role: dbUser.role, email: dbUser.email });
+
   } catch (err) {
     console.error("🔥 Login error:", err);
     return res.status(500).json({ error: "Server error: " + err.message });
@@ -225,8 +189,7 @@ router.post("/login", async (req, res) => {
 });
 
 /* ---------------------------
-   2FA: Setup (AUTH REQUIRED)
-   - returns { otpauth_url, qr } (data URL)
+   2FA SETUP
 --------------------------- */
 router.post("/2fa/setup", requireAuth, async (req, res) => {
   try {
@@ -236,14 +199,12 @@ router.post("/2fa/setup", requireAuth, async (req, res) => {
     });
 
     await sequelize.query(
-      `UPDATE public.users SET totp_secret = :s WHERE id = :id`,
+      `UPDATE users SET totp_secret = :s WHERE id = :id`,
       { replacements: { s: secret.base32, id: req.user.id }, type: QueryTypes.UPDATE }
     );
 
-    const otpUrl = secret.otpauth_url;
-    const qr = await QRCode.toDataURL(otpUrl);
-
-    return res.json({ otpauth_url: otpUrl, qr });
+    const qr = await QRCode.toDataURL(secret.otpauth_url);
+    return res.json({ otpauth_url: secret.otpauth_url, qr });
   } catch (err) {
     console.error("2fa/setup error:", err);
     return res.status(500).json({ error: "Failed to start 2FA setup" });
@@ -251,7 +212,7 @@ router.post("/2fa/setup", requireAuth, async (req, res) => {
 });
 
 /* ---------------------------
-   2FA: Verify & enable (AUTH REQUIRED)
+   2FA VERIFY & ENABLE
 --------------------------- */
 router.post("/2fa/verify", requireAuth, async (req, res) => {
   try {
@@ -259,22 +220,18 @@ router.post("/2fa/verify", requireAuth, async (req, res) => {
     if (!token) return res.status(400).json({ error: "Code required" });
 
     const rows = await sequelize.query(
-      `SELECT totp_secret FROM public.users WHERE id = :id LIMIT 1`,
+      `SELECT totp_secret FROM users WHERE id = :id LIMIT 1`,
       { replacements: { id: req.user.id }, type: QueryTypes.SELECT }
     );
+
     const sec = rows[0]?.totp_secret;
     if (!sec) return res.status(400).json({ error: "No TOTP secret on file" });
 
-    const ok = speakeasy.totp.verify({
-      secret: sec,
-      encoding: "base32",
-      token,
-      window: 1,
-    });
+    const ok = speakeasy.totp.verify({ secret: sec, encoding: "base32", token, window: 1 });
     if (!ok) return res.status(400).json({ error: "Invalid code" });
 
     await sequelize.query(
-      `UPDATE public.users SET twofa_enabled = true WHERE id = :id`,
+      `UPDATE users SET twofa_enabled = true WHERE id = :id`,
       { replacements: { id: req.user.id }, type: QueryTypes.UPDATE }
     );
 
@@ -286,16 +243,13 @@ router.post("/2fa/verify", requireAuth, async (req, res) => {
 });
 
 /* ---------------------------
-   2FA: Complete login with code (PUBLIC)
-   Body: { tempToken, code }
-   Returns final { token, role, email }
+   2FA LOGIN (PUBLIC)
 --------------------------- */
 router.post("/2fa/login", async (req, res) => {
   try {
     const { tempToken, code } = req.body || {};
-    if (!tempToken || !code) {
+    if (!tempToken || !code)
       return res.status(400).json({ error: "Missing code or token" });
-    }
 
     let payload;
     try {
@@ -304,30 +258,21 @@ router.post("/2fa/login", async (req, res) => {
     } catch {
       return res.status(401).json({ error: "Invalid or expired token" });
     }
-    if (!payload?.temp2fa || !payload?.id) {
+
+    if (!payload?.temp2fa || !payload?.id)
       return res.status(401).json({ error: "Invalid temp token" });
-    }
 
     const rows = await sequelize.query(
-      `SELECT id, email, role, totp_secret FROM public.users WHERE id = :id LIMIT 1`,
+      `SELECT id, email, role, totp_secret FROM users WHERE id = :id LIMIT 1`,
       { replacements: { id: payload.id }, type: QueryTypes.SELECT }
     );
     const u = rows[0];
     if (!u?.totp_secret) return res.status(400).json({ error: "No 2FA configured" });
 
-    const ok = speakeasy.totp.verify({
-      secret: u.totp_secret,
-      encoding: "base32",
-      token: code,
-      window: 1,
-    });
+    const ok = speakeasy.totp.verify({ secret: u.totp_secret, encoding: "base32", token: code, window: 1 });
     if (!ok) return res.status(400).json({ error: "Invalid code" });
 
-    const final = jwt.sign(
-      { id: u.id, email: u.email, role: u.role },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    const final = jwt.sign({ id: u.id, email: u.email, role: u.role }, process.env.JWT_SECRET, { expiresIn: "7d" });
     return res.json({ token: final, role: u.role, email: u.email });
   } catch (err) {
     console.error("2fa/login error:", err);
@@ -336,7 +281,7 @@ router.post("/2fa/login", async (req, res) => {
 });
 
 /* ---------------------------
-   Forgot / Reset (PUBLIC)
+   Forgot / Reset Password
 --------------------------- */
 router.post("/forgot", async (req, res) => {
   try {
@@ -344,23 +289,19 @@ router.post("/forgot", async (req, res) => {
     if (!email) return res.status(400).json({ error: "Email required" });
 
     const rows = await sequelize.query(
-      `SELECT id FROM public.users WHERE email = :email LIMIT 1`,
+      `SELECT id FROM users WHERE email = :email LIMIT 1`,
       { replacements: { email: String(email).trim().toLowerCase() }, type: QueryTypes.SELECT }
     );
     const user = rows[0];
-    // Do not reveal user existence
-    if (!user) return res.json({ ok: true });
+    if (!user) return res.json({ ok: true }); // Do not reveal existence
 
     const token = crypto.randomUUID();
     await sequelize.query(
-      `UPDATE public.users
-       SET reset_token = :t, reset_expires = now() + interval '1 hour'
-       WHERE id = :id`,
+      `UPDATE users SET reset_token = :t, reset_expires = now() + interval '1 hour' WHERE id = :id`,
       { replacements: { t: token, id: user.id }, type: QueryTypes.UPDATE }
     );
 
-    const base = process.env.FRONTEND_BASE_URL || "http://localhost:5173";
-    console.log("🔐 Password reset link:", `${base}/reset?token=${token}`);
+    console.log("🔐 Password reset link:", `${process.env.FRONTEND_BASE_URL || "http://localhost:5173"}/reset?token=${token}`);
 
     return res.json({ ok: true });
   } catch (err) {
@@ -372,17 +313,11 @@ router.post("/forgot", async (req, res) => {
 router.post("/reset", async (req, res) => {
   try {
     const { token, password } = req.body || {};
-    if (!token || !password) {
-      return res.status(400).json({ error: "Token and new password required" });
-    }
-    if (password.length < 6) {
-      return res.status(400).json({ error: "New password must be at least 6 characters" });
-    }
+    if (!token || !password) return res.status(400).json({ error: "Token and new password required" });
+    if (password.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
 
     const rows = await sequelize.query(
-      `SELECT id FROM public.users
-       WHERE reset_token = :t AND reset_expires > now()
-       LIMIT 1`,
+      `SELECT id FROM users WHERE reset_token = :t AND reset_expires > now() LIMIT 1`,
       { replacements: { t: token }, type: QueryTypes.SELECT }
     );
     const row = rows[0];
@@ -390,9 +325,7 @@ router.post("/reset", async (req, res) => {
 
     const hash = await bcrypt.hash(password, 10);
     await sequelize.query(
-      `UPDATE public.users
-       SET password = :p, reset_token = NULL, reset_expires = NULL
-       WHERE id = :id`,
+      `UPDATE users SET password = :p, reset_token = NULL, reset_expires = NULL WHERE id = :id`,
       { replacements: { p: hash, id: row.id }, type: QueryTypes.UPDATE }
     );
 
@@ -409,15 +342,13 @@ router.post("/reset", async (req, res) => {
 router.post("/change-password", requireAuth, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body || {};
-    if (!currentPassword || !newPassword) {
+    if (!currentPassword || !newPassword)
       return res.status(400).json({ error: "Current and new passwords are required" });
-    }
-    if (newPassword.length < 6) {
+    if (newPassword.length < 6)
       return res.status(400).json({ error: "New password must be at least 6 characters" });
-    }
 
     const rows = await sequelize.query(
-      `SELECT id, password FROM public.users WHERE id = :id LIMIT 1`,
+      `SELECT id, password FROM users WHERE id = :id LIMIT 1`,
       { replacements: { id: req.user.id }, type: QueryTypes.SELECT }
     );
     const u = rows[0];
@@ -427,10 +358,8 @@ router.post("/change-password", requireAuth, async (req, res) => {
     if (!ok) return res.status(400).json({ error: "Current password is incorrect" });
 
     const hash = await bcrypt.hash(newPassword, 10);
-    await sequelize.query(
-      `UPDATE public.users SET password = :p WHERE id = :id`,
-      { replacements: { p: hash, id: req.user.id }, type: QueryTypes.UPDATE }
-    );
+    await sequelize.query(`UPDATE users SET password = :p WHERE id = :id`, { replacements: { p: hash, id: req.user.id }, type: QueryTypes.UPDATE });
+
     return res.json({ ok: true });
   } catch (err) {
     console.error("change-password error:", err);
@@ -444,7 +373,7 @@ router.post("/change-password", requireAuth, async (req, res) => {
 router.post("/2fa/disable", requireAuth, async (req, res) => {
   try {
     await sequelize.query(
-      `UPDATE public.users SET twofa_enabled = false, totp_secret = NULL WHERE id = :id`,
+      `UPDATE users SET twofa_enabled = false, totp_secret = NULL WHERE id = :id`,
       { replacements: { id: req.user.id }, type: QueryTypes.UPDATE }
     );
     return res.json({ ok: true });
@@ -454,29 +383,4 @@ router.post("/2fa/disable", requireAuth, async (req, res) => {
   }
 });
 
-/* ---------------------------
-// Test email function
-async function testEmail() {
-  try {
-    await transporter.sendMail({
-      from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
-      to: "mbuijames@gmail.com",
-      subject: "Titan SMTP Test",
-      text: "This is a test email via Titan SMTP!",
-    });
-    console.log("✅ Email sent successfully!");
-  } catch (err) {
-    console.error("❌ Email failed:", err);
-  }
-}
-
-testEmail();
-transporter.verify((err, success) => {
-  if (err) {
-    console.error("SMTP ERROR:", err);
-  } else {
-    console.log("SMTP OK!");
-  }
-});
---------------------------- */
 export default router;
