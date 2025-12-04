@@ -87,11 +87,42 @@ router.post("/register", async (req, res) => {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
 
-    // SAVE OTP USING RAW SQL (Sequelize model does NOT include otp columns!)
-    await pool.query(
-      `UPDATE users SET otp = $1, otp_expiry = $2 WHERE email = $3`,
-      [otp, expiry, email]
-    );
+   // Assuming this is inside an async route handler
+try {
+  const { email } = req.body;
+
+  // Safety checks
+  if (!email) {
+    return res.status(400).json({ error: "Email is required." });
+  }
+  if (!otp) {
+    return res.status(400).json({ error: "OTP is missing." });
+  }
+  if (!expiry) {
+    return res.status(400).json({ error: "OTP expiry is missing." });
+  }
+
+  // Log values for debugging
+  console.log("Updating OTP:", { email, otp, expiry });
+
+  // Execute the query safely
+  const result = await pool.query(
+    `UPDATE users SET otp = $1, otp_expiry = $2 WHERE email = $3`,
+    [otp, expiry, email]
+  );
+
+  if (result.rowCount === 0) {
+    // No user found with that email
+    return res.status(404).json({ error: "User not found." });
+  }
+
+  // Success response
+  res.json({ message: "OTP updated successfully." });
+
+} catch (error) {
+  console.error("Error updating OTP:", error.message);
+  res.status(500).json({ error: "Internal server error." });
+}
 
     // Send OTP
     await transporter.sendMail({
