@@ -80,5 +80,13 @@ const safeUrl = (() => {
   }
 })();
 console.log(`🔌 Connecting to Postgres: ${safeUrl} (SSL: ${wantSSL ? "on" : "off"})`);
+const { Pool } = require("pg");
+
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+module.exports = pool;
 
 export default sequelize;
