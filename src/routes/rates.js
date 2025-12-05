@@ -8,11 +8,16 @@ const router = express.Router();
 router.get("/", async (req, res) => {
   try {
     const rows = await sequelize.query(
-      "SELECT id, rate, base_currency, target_currency, updated_at FROM exchange_rates",
+      "SELECT id, rate, base_currency, target_currency, updated_at FROM exchange_rates ORDER BY id ASC",
       { type: QueryTypes.SELECT }
     );
 
-    res.json({ success: true, data: rows });
+    res.json({
+      rates: rows,
+      source: "database",
+      lastUpdated: rows?.[0]?.updated_at || new Date().toISOString()
+    });
+
   } catch (err) {
     console.error("Rates error:", err);
     res.status(500).json({ error: "Server error" });
@@ -20,4 +25,3 @@ router.get("/", async (req, res) => {
 });
 
 export default router;
-
