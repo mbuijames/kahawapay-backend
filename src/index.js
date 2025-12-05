@@ -1,153 +1,132 @@
-// src/components/KahawaPayHero.jsx
-import React, { useEffect, useState, useCallback } from 'react';
-import { fetchRates } from '../utils/fetchRates.js';
+// kahawapay-backend/src/index.js
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
 
-const CACHE_KEY = 'kahawapay_rates_ui_v2';
-const CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-/* ------------------ Cache Helpers ------------------ */
-function readCache() {
+import sequelize from "./db.js";
+
+// Routers
+
+import authRoutes from "./routes/auth.js";
+import transactionRoutes from "./routes/transactions.js";          // user + general tx
+import guestRoutes from "./routes/transactions.guest.js";          // POST /guest
+import statusRoutes from "./routes/transactions.status.js";        // guest complete/status
+import adminRoutes from "./routes/admin.transactions.js";          // /api/admin/*
+import settingsRoutes from "./routes/settings.js";                 // /api/settings/*
+import exchangeRatesRoutes from "./routes/exchangeRates.js";       // /api/settings/exchange-rates/*
+import walletRoutes from "./routes/wallet.js";                     // /api/wallet/*
+import ratesRouter from "./routes/rates.js";
+// If you really need the “simple” guest tx route, keep it. If not, remove the import & mounting.
+// import guestTxSimpleRoutes from "./routes/guest.tx.simple.js";
+
+dotenv.config();
+
+const app = express();
+
+/* -----------------------------
+   Global middleware
+----------------------------- */
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use("/api/auth", authRoutes);
+app.use("/api/rates", ratesRouter);
+app.use(ratesRouter);
+
+// Disable caching globally (place BEFORE routes)
+app.use((req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  next();
+});
+
+/* -----------------------------
+   Healthcheck
+----------------------------- */
+app.get("/api/health", (req, res) => res.json({ ok: true }));
+
+/* -----------------------------
+   Routes (each mounted ONCE)
+----------------------------- */
+// Auth
+app.use("/api/auth", authRoutes);
+
+// Settings
+app.use("/api/settings", settingsRoutes);
+app.use("/api/settings/exchange-rates", exchangeRatesRoutes);
+
+// Wallet
+app.use("/api/wallet", walletRoutes);
+
+// Transactions
+app.use("/api/transactions", transactionRoutes); // general/user tx routes
+app.use("/api/transactions", guestRoutes);       // adds POST /guest etc.
+app.use("/api", statusRoutes);                   // e.g. /api/transactions/guest/complete
+
+// Admin
+app.use("/api/admin", adminRoutes);
+
+// Optional: “simple” guest route (avoid overlapping with guestRoutes)
+// app.use("/api", guestTxSimpleRoutes);
+
+/* -----------------------------
+   Root
+----------------------------- */
+app.get("/", (_req, res) => {
+  res.send("✅ KahawaPay Backend is running");
+});
+
+/* -----------------------------
+   DB connect
+----------------------------- */
+(async () => {
   try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (Date.now() - (parsed.ts || 0) > CACHE_TTL_MS) {
-      localStorage.removeItem(CACHE_KEY);
-      return null;
+    await sequelize.authenticate();
+    console.log("✅ Database connected");
+
+    if (process.env.NODE_ENV === "development") {
+      await sequelize.sync({ alter: true });
+      console.log("✅ Models synchronized (dev mode)");
+    } else {
+      console.log("🚫 Skipping auto-sync (production mode)");
     }
-    return parsed.data;
-  } catch {
-    return null;
+  } catch (err) {
+    console.error("❌ DB connection error:", err.message);
   }
-}
+})();
 
-function writeCache(data) {
-  try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data }));
-  } catch {}
-}
-
-/* ------------------ UI Component ------------------ */
-export default function KahawaPayHero() {
-  const [data, setData] = useState(() => readCache());
-  const [loading, setLoading] = useState(!Boolean(data));
-  const [error, setError] = useState(null);
-
-  /* Load Rates */
-  const loadRates = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const result = await fetchRates(); // Backend fetch
-      setData(result);
-      writeCache(result);
-    } catch (err) {
-      setError(err?.message || "Failed to load rates");
-    } finally {
-      setLoading(false);
+/* -----------------------------
+   Debug: list registered routes
+----------------------------- */
+function listRoutes(app) {
+  console.log("📌 Registered routes:");
+  app._router.stack.forEach((middleware) => {
+    if (middleware.route) {
+      const methods = Object.keys(middleware.route.methods)
+        .map((m) => m.toUpperCase())
+        .join(", ");
+      console.log(`   ${methods.padEnd(10)} ${middleware.route.path}`);
+    } else if (middleware.name === "router") {
+      middleware.handle.stack.forEach((handler) => {
+        const route = handler.route;
+        if (route) {
+          const methods = Object.keys(route.methods)
+            .map((m) => m.toUpperCase())
+            .join(", ");
+          console.log(`   ${methods.padEnd(10)} ${route.path}`);
+        }
+      });
     }
-  }, []);
-
-  /* Initial load + auto-refresh */
-  useEffect(() => {
-    if (!data) loadRates();
-    const id = setInterval(loadRates, 60000);
-    return () => clearInterval(id);
-  }, [data, loadRates]);
-
-  const fmt = (v) => {
-    if (v === null || v === undefined) return "—";
-    const num = Number(String(v).replace(/,/g, ""));
-    return Number.isFinite(num) ? num.toLocaleString() : v;
-  };
-
-  // Backend may return { rates: [...] } OR [...]
-  const rows = Array.isArray(data?.rates) ? data.rates : Array.isArray(data) ? data : [];
-
-  // Filter OUT FEE currency
-  const filteredRows = rows.filter(r => (r.target_currency || "").toUpperCase() !== "FEE");
-
-  const lastUpdated = data?.lastUpdated ?? null;
-
-  return (
-    <section className="w-full bg-gradient-to-r from-sky-50 to-white border-b shadow-sm">
-      <div className="max-w-6xl mx-auto px-4 py-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-
-        {/* HEADER / TITLE */}
-        <div className="flex items-center gap-3">
-          <div className="flex-shrink-0 rounded-2xl bg-white p-2 shadow">
-            <svg width="40" height="40" viewBox="0 0 24 24">
-              <rect width="24" height="24" rx="6" fill="#0ea5e9" />
-              <text x="50%" y="53%" textAnchor="middle" fontWeight="700" fontSize="12" fill="white">KP</text>
-            </svg>
-          </div>
-          <div>
-            <h1 className="text-lg font-semibold">Our Competitive Market Prices</h1>
-            <p className="text-sm text-slate-500">Live indicative rates — updated automatically</p>
-          </div>
-        </div>
-
-        {/* LAST UPDATED */}
-        <div className="text-sm text-slate-500">
-          {!loading && !error && lastUpdated ? (
-            <div>Updated: {new Date(lastUpdated).toLocaleString()}</div>
-          ) : null}
-        </div>
-
-      </div>
-
-      {/* MAIN CONTENT */}
-      <div className="max-w-6xl mx-auto px-4 pb-4">
-        <div className="w-full bg-white rounded-2xl p-3 shadow-sm mt-2">
-
-          {/* LOADING */}
-          {loading && <div className="text-center py-6 text-slate-600">Loading rates…</div>}
-
-          {/* ERROR */}
-          {!loading && error && (
-            <div className="text-sm text-red-600 py-3">
-              Failed to load rates ({error})
-            </div>
-          )}
-
-          {/* EMPTY */}
-          {!loading && !error && filteredRows.length === 0 && (
-            <div className="text-sm text-slate-600 py-3">No rates available</div>
-          )}
-
-          {/* DATA */}
-          {!loading && !error && filteredRows.length > 0 && (
-            <>
-              <div className="flex flex-wrap gap-4 items-start mb-4">
-                {filteredRows.map((r, idx) => {
-                  const base = (r.base_currency || "USD").toUpperCase();
-                  const target = (r.target_currency || "—").toUpperCase();
-                  const price = r.rate ?? r.value ?? null;
-
-                  return (
-                    <div
-                      key={idx}
-                      className="px-3 py-2 bg-gray-50 rounded-md border shadow-sm min-w-[150px]"
-                    >
-                      <div className="text-xs text-gray-600">
-                        {target} / {base}
-                      </div>
-                      <div className="text-lg font-medium">{fmt(price)}</div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="text-xs text-slate-500">
-                Source: {data?.source ?? "unknown"}
-                {lastUpdated && ` • Updated: ${new Date(lastUpdated).toLocaleString()}`}
-              </div>
-            </>
-          )}
-
-        </div>
-      </div>
-    </section>
-  );
+  });
 }
+listRoutes(app);
+
+/* -----------------------------
+   Start server
+----------------------------- */
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running at http://localhost:${PORT}`);
+});
