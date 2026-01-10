@@ -12,28 +12,40 @@ export async function getRate(code) {
      LIMIT 1`,
     { replacements: { code }, type: QueryTypes.SELECT }
   );
-  if (!rows.length) throw new Error(`Missing exchange rate for ${code}`);
-  return Number(rows[0].rate);
+
+  if (!rows.length || rows[0].rate === null || rows[0].rate === undefined) {
+    throw new Error(`Missing exchange rate for ${code}`);
+  }
+
+  const rate = Number(rows[0].rate);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    throw new Error(`Invalid exchange rate for ${code}`);
+  }
+
+  return rate;
 }
 
 /** round to 2dp number */
 export function to2(n) {
-  return Number(Number(n).toFixed(2));
+  const x = Number(n);
+  if (!Number.isFinite(x)) return 0;
+  return Number(x.toFixed(2));
 }
 
 /**
  * Compute fees + recipient net from a USD gross.
- * currency: 'USD' | 'KES' | 'UGX' | 'TZS' (must exist in exchange_rates)
- * FEE is read from exchange_rates as a decimal fraction (e.g., 0.02 for 2%).
+ * currency: 'USD' | 'KES' | 'UGX' | 'TZS'
  */
 export async function computeFromUsd({ amount_usd, currency = "KES" }) {
   const CUR = String(currency).toUpperCase();
   const usd = Number(amount_usd);
 
-  if (!Number.isFinite(usd)) throw new Error("amount_usd must be a number");
+  if (!Number.isFinite(usd) || usd <= 0) {
+    throw new Error("amount_usd must be a positive number");
+  }
 
   const usd2cur = CUR === "USD" ? 1 : await getRate(CUR);
-  const feePct  = await getRate("FEE"); // e.g., 0.02
+  const feePct  = await getRate("FEE");
 
   const grossLocal = usd * usd2cur;
   const recipient  = grossLocal * (1 - feePct);
@@ -53,7 +65,9 @@ export async function computeFromLocalNet({ recipient_amount_net_local, currency
   const CUR = String(currency).toUpperCase();
   const netLocal = Number(recipient_amount_net_local);
 
-  if (!Number.isFinite(netLocal)) throw new Error("recipient_amount_net_local must be a number");
+  if (!Number.isFinite(netLocal) || netLocal <= 0) {
+    throw new Error("recipient_amount_net_local must be a positive number");
+  }
 
   const usd2cur = CUR === "USD" ? 1 : await getRate(CUR);
   const feePct  = await getRate("FEE");
@@ -76,16 +90,22 @@ export async function computeFromBtc({ amount_crypto_btc, currency = "KES" }) {
   const CUR = String(currency).toUpperCase();
   const btc = Number(amount_crypto_btc);
 
-  if (!Number.isFinite(btc)) throw new Error("amount_crypto_btc must be a number");
+  if (!Number.isFinite(btc) || btc <= 0) {
+    throw new Error("amount_crypto_btc must be a positive number");
+  }
 
-  const btcUsd  = await getRate("BTCUSD");          // price of 1 BTC in USD
-  const usd2cur = CUR === "USD" ? 1 : await getRate(CUR);
-  const feePct  = await getRate("FEE");
+  const btcUsd  = await getRate("BTCUSD");   // BTC → USD
+  const usd2cur = CUR === "USD" ? 1 : await getRate(CUR); // USD → Local
+  const feePct  = await getRate("FEE");      // Fee %
 
   const usd        = btc * btcUsd;
   const grossLocal = usd * usd2cur;
   const recipient  = grossLocal * (1 - feePct);
   const feeTotal   = grossLocal - recipient;
+
+  if (!Number.isFinite(recipient) || recipient <= 0) {
+    throw new Error("Computed recipient amount is invalid");
+  }
 
   return {
     amount_usd: to2(usd),
