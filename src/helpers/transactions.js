@@ -2,7 +2,7 @@
 import sequelize from "../db.js";
 import { QueryTypes } from "sequelize";
 
-/** Read a rate from exchange_rates by code (e.g., 'BTCUSD', 'KES', 'FEE') */
+/** Read a rate from exchange_rates by target_currency (base is USD) */
 export async function getRate(code) {
   const rows = await sequelize.query(
     `SELECT rate
@@ -34,7 +34,6 @@ export function to2(n) {
 
 /**
  * Compute fees + recipient net from a USD gross.
- * currency: 'USD' | 'KES' | 'UGX' | 'TZS'
  */
 export async function computeFromUsd({ amount_usd, currency = "KES" }) {
   const CUR = String(currency).toUpperCase();
@@ -84,7 +83,7 @@ export async function computeFromLocalNet({ recipient_amount_net_local, currency
 }
 
 /**
- * Compute from BTC: BTC → USD via BTCUSD, then same fee/FX logic.
+ * Compute from BTC: BTC → USD via BTC (derived BTCUSD), then same fee/FX logic.
  */
 export async function computeFromBtc({ amount_crypto_btc, currency = "KES" }) {
   const CUR = String(currency).toUpperCase();
@@ -94,9 +93,10 @@ export async function computeFromBtc({ amount_crypto_btc, currency = "KES" }) {
     throw new Error("amount_crypto_btc must be a positive number");
   }
 
-  const btcUsd  = await getRate("BTCUSD");   // BTC → USD
-  const usd2cur = CUR === "USD" ? 1 : await getRate(CUR); // USD → Local
-  const feePct  = await getRate("FEE");      // Fee %
+  // FIX: BTCUSD is derived from BTC rate (USD → BTC in table)
+  const btcUsd  = await getRate("BTC");      // 1 BTC in USD
+  const usd2cur = CUR === "USD" ? 1 : await getRate(CUR);
+  const feePct  = await getRate("FEE");
 
   const usd        = btc * btcUsd;
   const grossLocal = usd * usd2cur;
