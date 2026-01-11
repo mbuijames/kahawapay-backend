@@ -312,11 +312,17 @@ router.post("/forgot", async (req, res) => {
       { replacements: { email: String(email).trim().toLowerCase() }, type: QueryTypes.SELECT }
     );
     const user = rows[0];
+
+    // Do not reveal whether email exists
     if (!user) return res.json({ ok: true });
 
-    const token = crypto.randomUUID();
+    // Secure token (Render-safe)
+    const token = crypto.randomBytes(32).toString("hex");
+
     await sequelize.query(
-      `UPDATE users SET reset_token = :t, reset_expires = now() + interval '1 hour' WHERE id = :id`,
+      `UPDATE users 
+       SET reset_token = :t, reset_expires = now() + interval '1 hour' 
+       WHERE id = :id`,
       { replacements: { t: token, id: user.id }, type: QueryTypes.UPDATE }
     );
 
@@ -332,7 +338,9 @@ Please click the link below to set a new password:
 ${resetLink}
 
 This link is valid for 1 hour. If you did not request a password reset, please ignore this email.
-${emailFooter()}
+
+Registered KahawaPay © 2026
+info@kahawapay.com
     `;
 
     await transporter.sendMail({
