@@ -357,6 +357,55 @@ info@kahawapay.com
   }
 });
 
+/* ---------------------------
+    Reset Password
+--------------------------- */
+
+outer.post("/reset", async (req, res) => {
+  try {
+    const { token, password } = req.body || {};
+
+    if (!token || !password) {
+      return res.status(400).json({ error: "Token and new password required" });
+    }
+
+    if (password.length < 6) {
+      return res.status(400).json({ error: "New password must be at least 6 characters" });
+    }
+
+    const rows = await sequelize.query(
+      `SELECT id, reset_expires 
+       FROM users 
+       WHERE reset_token = :t 
+       LIMIT 1`,
+      { replacements: { t: token }, type: QueryTypes.SELECT }
+    );
+
+    if (!rows.length) {
+      return res.status(400).json({ error: "Invalid reset token" });
+    }
+
+    const user = rows[0];
+
+    if (new Date(user.reset_expires) < new Date()) {
+      return res.status(400).json({ error: "Reset token has expired" });
+    }
+
+    const hash = await bcrypt.hash(password, 10);
+
+    await sequelize.query(
+      `UPDATE users 
+       SET password = :p, reset_token = NULL, reset_expires = NULL 
+       WHERE id = :id`,
+      { replacements: { p: hash, id: user.id }, type: QueryTypes.UPDATE }
+    );
+
+    return res.json({ ok: true });
+  } catch (err) {
+    console.error("reset error:", err);
+    return res.status(500).json({ error: "Failed to reset password" });
+  }
+});
 
 /* ---------------------------
    CHANGE PASSWORD (AUTH REQUIRED)
