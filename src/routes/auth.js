@@ -361,7 +361,7 @@ info@kahawapay.com
     Reset Password
 --------------------------- */
 
-outer.post("/reset", async (req, res) => {
+router.post("/reset", async (req, res) => {
   try {
     const { token, password } = req.body || {};
 
