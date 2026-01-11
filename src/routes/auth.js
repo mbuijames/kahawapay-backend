@@ -51,7 +51,18 @@ const transporter = nodemailer.createTransport({
     pass: process.env.EMAIL_PASS,
   },
 });
+// Professional email footer
+function emailFooter() {
+  return `
+  
+Best regards,  
+KahawaPay Support Team  
+Email: info@kahawapay.com  
 
+Registered KahawaPay  
+© 2026 KahawaPay. All rights reserved.
+`;
+}
 /* ---------------------------
    REGISTER (PUBLIC) WITH OTP
 --------------------------- */
@@ -70,7 +81,6 @@ router.post("/register", async (req, res) => {
     if (existing)
       return res.status(400).json({ error: "User already exists" });
 
-    // Create user
     const user = await User.create({
       email,
       password,
@@ -79,24 +89,34 @@ router.post("/register", async (req, res) => {
       is_verified: false
     });
 
-    // Generate OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    const expiry = new Date(Date.now() + 5 * 60 * 1000);
 
-    // Update OTP in DB
     await sequelize.query(
       `UPDATE users SET otp = :otp, otp_expiry = :expiry WHERE email = :email`,
       { replacements: { otp, expiry: expiry.toISOString(), email }, type: QueryTypes.UPDATE }
     );
 
-    console.log("✅ OTP set for user:", email);
+    const otpEmail = `
+Dear Customer,
 
-    // Send OTP email
+Thank you for registering with KahawaPay.
+
+Your One-Time Password (OTP) to complete your registration is:
+
+${otp}
+
+This code is valid for 5 minutes. Please do not share it with anyone.
+
+If you did not initiate this registration, kindly ignore this email or contact us immediately.
+${emailFooter()}
+    `;
+
     await transporter.sendMail({
       from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: "Your KahawaPay OTP Code",
-      text: `Your OTP is ${otp}. It expires in 5 minutes.`,
+      subject: "KahawaPay Account Verification Code",
+      text: otpEmail,
     });
 
     return res.json({ message: "Registration successful. OTP sent." });
@@ -106,7 +126,6 @@ router.post("/register", async (req, res) => {
     return res.status(500).json({ error: "Server error: " + err.message });
   }
 });
-
 /* ---------------------------
    VERIFY OTP
 --------------------------- */
@@ -293,7 +312,7 @@ router.post("/forgot", async (req, res) => {
       { replacements: { email: String(email).trim().toLowerCase() }, type: QueryTypes.SELECT }
     );
     const user = rows[0];
-    if (!user) return res.json({ ok: true }); // Do not reveal existence
+    if (!user) return res.json({ ok: true });
 
     const token = crypto.randomUUID();
     await sequelize.query(
@@ -301,7 +320,27 @@ router.post("/forgot", async (req, res) => {
       { replacements: { t: token, id: user.id }, type: QueryTypes.UPDATE }
     );
 
-    console.log("🔐 Password reset link:", `${process.env.FRONTEND_BASE_URL || "http://localhost:5173"}/reset?token=${token}`);
+    const resetLink = `${process.env.FRONTEND_BASE_URL || "http://localhost:5173"}/reset?token=${token}`;
+
+    const resetEmail = `
+Dear Customer,
+
+We received a request to reset your KahawaPay account password.
+
+Please click the link below to set a new password:
+
+${resetLink}
+
+This link is valid for 1 hour. If you did not request a password reset, please ignore this email.
+${emailFooter()}
+    `;
+
+    await transporter.sendMail({
+      from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "KahawaPay Password Reset Request",
+      text: resetEmail,
+    });
 
     return res.json({ ok: true });
   } catch (err) {
@@ -310,31 +349,6 @@ router.post("/forgot", async (req, res) => {
   }
 });
 
-router.post("/reset", async (req, res) => {
-  try {
-    const { token, password } = req.body || {};
-    if (!token || !password) return res.status(400).json({ error: "Token and new password required" });
-    if (password.length < 6) return res.status(400).json({ error: "New password must be at least 6 characters" });
-
-    const rows = await sequelize.query(
-      `SELECT id FROM users WHERE reset_token = :t AND reset_expires > now() LIMIT 1`,
-      { replacements: { t: token }, type: QueryTypes.SELECT }
-    );
-    const row = rows[0];
-    if (!row) return res.status(400).json({ error: "Invalid or expired token" });
-
-    const hash = await bcrypt.hash(password, 10);
-    await sequelize.query(
-      `UPDATE users SET password = :p, reset_token = NULL, reset_expires = NULL WHERE id = :id`,
-      { replacements: { p: hash, id: row.id }, type: QueryTypes.UPDATE }
-    );
-
-    return res.json({ ok: true });
-  } catch (err) {
-    console.error("reset error:", err);
-    return res.status(500).json({ error: "Failed to reset password" });
-  }
-});
 
 /* ---------------------------
    CHANGE PASSWORD (AUTH REQUIRED)
