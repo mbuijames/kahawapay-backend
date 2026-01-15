@@ -51,6 +51,22 @@ function validateUserPayload(body) {
   return { amount_crypto_btc, currency, recipient_msisdn };
 }
 
+//update Last IP
+async function updateAuthenticatedUserIp(userId, clientIp) {
+  const sql = `
+    UPDATE public.users
+    SET last_ip = $1::text,
+        last_seen_at = NOW()
+    WHERE id = $2::integer;
+  `;
+
+  await sequelize.query(sql, {
+    bind: [clientIp, userId],
+    type: QueryTypes.UPDATE
+  });
+}
+
+const router = express.Router();
 /* =========================================================
  *                 PREVIEW (NO DB INSERT)
  * POST /api/transactions/preview
@@ -87,6 +103,12 @@ router.post("/preview", requireAuth, async (req, res) => {
     });
   }
 });
+router.post("/preview", requireAuth, async (req, res) => {
+  const clientIp =
+    req.headers["x-forwarded-for"]?.split(",")[0] ||
+    req.socket.remoteAddress;
+
+  await updateAuthenticatedUserIp(req.user.id, clientIp);
 
 /* =========================================================
  *                 CREATE (AFTER SUBMIT)
