@@ -22,12 +22,17 @@ router.post("/contact", async (req, res) => {
       to: process.env.EMAIL_USER,
       replyTo: email,
       subject: `New Customer Message - ${name}`,
-      html: `<p>${message}</p>`
+      html: `
+        <h3>New Message from Website Chat</h3>
+        <p><b>Name:</b> ${name}</p>
+        <p><b>Email:</b> ${email}</p>
+        <p><b>Message:</b><br/>${message}</p>
+      `
     });
 
     res.json({ success: true });
-  } catch (err) {
-    console.error("EMAIL ERROR:", err);
+  } catch (error) {
+    console.error("EMAIL ERROR:", error);
     res.status(500).json({ error: "Email failed" });
   }
 });
