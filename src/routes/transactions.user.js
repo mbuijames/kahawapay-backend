@@ -13,6 +13,7 @@ function getSupportedCurrencies() {
     .split(",")
     .map((s) => s.trim().toUpperCase())
     .filter(Boolean);
+
   return fromEnv.length ? fromEnv : ["KES", "UGX", "TZS"];
 }
 
@@ -52,9 +53,13 @@ function validateUserPayload(body) {
 router.post("/preview", requireAuth, async (req, res) => {
   try {
     const raw = { ...(req.body || {}) };
-    delete raw.user_id; delete raw.userid; delete raw.id; delete raw.admin_marked_paid_by;
+    delete raw.user_id;
+    delete raw.userid;
+    delete raw.id;
+    delete raw.admin_marked_paid_by;
 
-    const { recipient_msisdn, amount_crypto_btc, currency } = validateUserPayload(raw);
+    const { recipient_msisdn, amount_crypto_btc, currency } =
+      validateUserPayload(raw);
 
     const { amount_usd, fee_total, recipient_amount } = await computeFromBtc({
       amount_crypto_btc,
@@ -87,9 +92,13 @@ router.post("/", requireAuth, async (req, res) => {
       req.socket.remoteAddress;
 
     const raw = { ...(req.body || {}) };
-    delete raw.user_id; delete raw.userid; delete raw.id; delete raw.admin_marked_paid_by;
+    delete raw.user_id;
+    delete raw.userid;
+    delete raw.id;
+    delete raw.admin_marked_paid_by;
 
-    const { recipient_msisdn, amount_crypto_btc, currency } = validateUserPayload(raw);
+    const { recipient_msisdn, amount_crypto_btc, currency } =
+      validateUserPayload(raw);
 
     const { amount_usd, fee_total, recipient_amount } = await computeFromBtc({
       amount_crypto_btc,
@@ -101,7 +110,8 @@ router.post("/", requireAuth, async (req, res) => {
         (user_id, guest_identifier, recipient_msisdn, amount_usd, amount_crypto_btc,
          fee_total, recipient_amount, currency, status, client_ip, created_at)
       VALUES
-        (:user_id, NULL, :msisdn, :amount_usd, :amount_crypto, :fee_total, :recipient_amount, :currency, 'pending', :client_ip, NOW())
+        (:user_id, NULL, :msisdn, :amount_usd, :amount_crypto, :fee_total,
+         :recipient_amount, :currency, 'pending', :client_ip, NOW())
       RETURNING id, recipient_msisdn, recipient_amount, currency, status, created_at;
     `;
 
@@ -116,7 +126,11 @@ router.post("/", requireAuth, async (req, res) => {
       client_ip: clientIp,
     };
 
-    const rows = await sequelize.query(sql, { replacements, type: QueryTypes.INSERT });
+    const rows = await sequelize.query(sql, {
+      replacements,
+      type: QueryTypes.INSERT,
+    });
+
     const row = Array.isArray(rows) ? (rows[0]?.[0] ?? rows[0]) : rows;
 
     return res.json({
@@ -130,7 +144,9 @@ router.post("/", requireAuth, async (req, res) => {
     });
   } catch (err) {
     console.error("🔥 user TX create error:", err);
-    return res.status(500).json({ error: "Failed to create transaction", details: err.message });
+    return res
+      .status(500)
+      .json({ error: "Failed to create transaction", details: err.message });
   }
 });
 
