@@ -1,4 +1,3 @@
-
 // src/routes/transactions.user.js
 import express from "express";
 import sequelize from "../db.js";
@@ -21,20 +20,17 @@ function getSupportedCurrencies() {
 function validateUserPayload(body) {
   const errors = [];
 
-  // BTC amount
   const amount_crypto_btc = Number(body?.amount_crypto_btc);
   if (!Number.isFinite(amount_crypto_btc) || amount_crypto_btc <= 0) {
     errors.push("amount_crypto_btc must be a positive number");
   }
 
-  // Currency
   const currency = String(body?.currency || "KES").toUpperCase();
   const allowed = getSupportedCurrencies();
   if (!allowed.includes(currency)) {
     errors.push(`currency must be one of: ${allowed.join(", ")}`);
   }
 
-  // MSISDN: 12 digits
   const recipient_msisdn = String(body?.recipient_msisdn || "")
     .replace(/\D/g, "")
     .slice(0, 12);
@@ -52,19 +48,10 @@ function validateUserPayload(body) {
   return { amount_crypto_btc, currency, recipient_msisdn };
 }
 
-
-
-/* =========================================================
- *                 PREVIEW (NO DB INSERT)
- * POST /api/transactions/preview
- * Auth required
- * Body: { amount_crypto_btc, currency?, recipient_msisdn }
- * Responds: { sender_email, amount_recipient, currency, recipient_msisdn, amount_usd, fee_total }
- * ========================================================= */
+/* ================= PREVIEW ================= */
 router.post("/preview", requireAuth, async (req, res) => {
   try {
     const raw = { ...(req.body || {}) };
-    // Never accept client-sent IDs
     delete raw.user_id; delete raw.userid; delete raw.id; delete raw.admin_marked_paid_by;
 
     const { recipient_msisdn, amount_crypto_btc, currency } = validateUserPayload(raw);
@@ -76,7 +63,7 @@ router.post("/preview", requireAuth, async (req, res) => {
 
     return res.json({
       sender_email: req.user.email,
-      amount_recipient: to2(recipient_amount), // local currency amount
+      amount_recipient: to2(recipient_amount),
       currency,
       recipient_msisdn,
       amount_usd: to2(amount_usd),
@@ -90,31 +77,20 @@ router.post("/preview", requireAuth, async (req, res) => {
     });
   }
 });
-router.post("/preview", requireAuth, async (req, res) => {
-  const clientIp =
-    req.headers["x-forwarded-for"]?.split(",")[0] ||
-    req.socket.remoteAddress;
 
-  await updateAuthenticatedUserIp(req.user.id, clientIp);
-
-/* =========================================================
- *                 CREATE (AFTER SUBMIT)
- * POST /api/transactions
- * Auth required
- * Body: { amount_crypto_btc, currency?, recipient_msisdn }
- * Responds: { id, status, recipient_msisdn, amount_recipient, currency, amount_usd, created_at }
- * ========================================================= */
+/* ================= CREATE ================= */
 router.post("/", requireAuth, async (req, res) => {
   try {
     const userId = Number(req.user.id);
+    const clientIp =
+      req.headers["x-forwarded-for"]?.split(",")[0] ||
+      req.socket.remoteAddress;
 
     const raw = { ...(req.body || {}) };
-    // Never accept client-sent IDs / admin flags
     delete raw.user_id; delete raw.userid; delete raw.id; delete raw.admin_marked_paid_by;
 
     const { recipient_msisdn, amount_crypto_btc, currency } = validateUserPayload(raw);
 
-    // Compute settlement figures
     const { amount_usd, fee_total, recipient_amount } = await computeFromBtc({
       amount_crypto_btc,
       currency,
@@ -128,6 +104,7 @@ router.post("/", requireAuth, async (req, res) => {
         (:user_id, NULL, :msisdn, :amount_usd, :amount_crypto, :fee_total, :recipient_amount, :currency, 'pending', :client_ip, NOW())
       RETURNING id, recipient_msisdn, recipient_amount, currency, status, created_at;
     `;
+
     const replacements = {
       user_id: userId,
       msisdn: String(recipient_msisdn),
@@ -139,7 +116,6 @@ router.post("/", requireAuth, async (req, res) => {
       client_ip: clientIp,
     };
 
-    // NOTE: In pg via sequelize.query, INSERT returns rows in the 2nd item of the array in some configs.
     const rows = await sequelize.query(sql, { replacements, type: QueryTypes.INSERT });
     const row = Array.isArray(rows) ? (rows[0]?.[0] ?? rows[0]) : rows;
 
