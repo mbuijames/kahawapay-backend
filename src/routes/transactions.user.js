@@ -162,14 +162,16 @@ router.post("/guest", async (req, res) => {
         error: `Guests cannot complete transactions above $${GUEST_TX_LIMIT_USD}. Please login.`,
       });
     }
-
+const clientIp =
+  req.headers["x-forwarded-for"]?.split(",")[0] ||
+  req.socket.remoteAddress;
     const insertSql = `
       INSERT INTO public.transactions
         (user_id, recipient_msisdn, amount_usd, amount_crypto_btc,
-         fee_total, recipient_amount, currency, status, created_at)
+         fee_total, recipient_amount, currency, status, client_ip, created_at)
       VALUES
         ($1::integer, $2::text, $3::numeric(12,2), $4::numeric(18,8),
-         $5::numeric(12,2), $6::numeric(12,2), $7::varchar(10), 'pending', NOW())
+         $5::numeric(12,2), $6::numeric(12,2), $7::varchar(10), 'pending',  $8::VARCHAR(45), NOW())
       RETURNING id, recipient_msisdn, recipient_amount, currency, status, created_at;
     `;
 
@@ -181,6 +183,7 @@ router.post("/guest", async (req, res) => {
       to2(fee_total),
       to2(recipient_amount),
       currency,
+      clientIp,
     ];
 
     const rows = await sequelize.query(insertSql, { bind, type: QueryTypes.SELECT });
