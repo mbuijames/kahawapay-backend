@@ -17,6 +17,12 @@ function getSupportedCurrencies() {
     .filter(Boolean);
   return fromEnv.length ? fromEnv : ["KES", "UGX", "TZS"];
 }
+const clientIp =
+  req.headers["x-forwarded-for"]?.split(",")[0] ||
+  req.socket.remoteAddress;
+
+const { id: guestUserId, email: guestEmail } =
+  await createSequentialGuestUser(clientIp);
 
 /** Tiny validation helper (no extra deps) */
 function validateGuestPayload(body) {
@@ -142,7 +148,35 @@ router.post("/guest", async (req, res) => {
 
     const { recipient_msisdn, amount_crypto_btc, currency } = validateGuestPayload(raw);
 
-    const { id: guestUserId, email: guestEmail } = await createSequentialGuestUser();
+    async function createSequentialGuestUser(clientIp) {
+  const sql = `
+    WITH next_num AS (
+      SELECT COALESCE(
+        MAX(CAST(SUBSTRING(email FROM 'guest-(\\d+)') AS INT)), 0
+      ) + 1 AS n
+      FROM public.users
+      WHERE email LIKE 'guest-%@kahawapay.com'
+    )
+    INSERT INTO public.users (email, password, role, is_guest, last_ip, created_at)
+    SELECT
+      'guest-' || LPAD(n::text, 5, '0') || '@kahawapay.com',
+      '',
+      'guest',
+      true,
+      $1::text,
+      NOW()
+    FROM next_num
+    RETURNING id, email;
+  `;
+  const rows = await sequelize.query(sql, {
+    bind: [clientIp],
+    type: QueryTypes.SELECT
+  });
+  const row = rows[0];
+  if (!row?.id) throw new Error("Failed to create guest user (no ID returned)");
+  return { id: row.id, email: row.email };
+}
+
 
     let result;
     try {
