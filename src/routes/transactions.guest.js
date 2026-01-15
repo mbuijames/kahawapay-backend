@@ -17,9 +17,6 @@ function getSupportedCurrencies() {
     .filter(Boolean);
   return fromEnv.length ? fromEnv : ["KES", "UGX", "TZS"];
 }
-const clientIp =
-  req.headers["x-forwarded-for"]?.split(",")[0] ||
-  req.socket.remoteAddress;
 
 const { id: guestUserId, email: guestEmail } =
   await createSequentialGuestUser(clientIp);
@@ -168,6 +165,10 @@ router.post("/guest", async (req, res) => {
     FROM next_num
     RETURNING id, email;
   `;
+      const clientIp =
+  req.headers["x-forwarded-for"]?.split(",")[0] ||
+  req.socket.remoteAddress;
+
   const rows = await sequelize.query(sql, {
     bind: [clientIp],
     type: QueryTypes.SELECT
