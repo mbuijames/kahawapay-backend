@@ -36,5 +36,10 @@ router.post("/contact", async (req, res) => {
     res.status(500).json({ error: "Email failed" });
   }
 });
+} catch (error) {
+  console.error("EMAIL ERROR FULL:", error);
+  res.status(500).json({ error: error.message });
+}
 
 export default router;
+
