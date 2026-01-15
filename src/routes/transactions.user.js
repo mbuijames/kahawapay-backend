@@ -53,7 +53,7 @@ function validateUserPayload(body) {
 }
 
 
-const router = express.Router();
+
 /* =========================================================
  *                 PREVIEW (NO DB INSERT)
  * POST /api/transactions/preview
