@@ -17,6 +17,7 @@ import settingsRoutes from "./routes/settings.js";                 // /api/setti
 import exchangeRatesRoutes from "./routes/exchangeRates.js";       // /api/settings/exchange-rates/*
 import walletRoutes from "./routes/wallet.js";                     // /api/wallet/*
 import ratesRouter from "./routes/rates.js";
+import supportRoutes from "./routes/support.js";
 // If you really need the “simple” guest tx route, keep it. If not, remove the import & mounting.
 // import guestTxSimpleRoutes from "./routes/guest.tx.simple.js";
 
@@ -33,6 +34,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use("/api/auth", authRoutes);
 app.use("/api/rates", ratesRouter);
 app.use(ratesRouter);
+app.use("/api/support", supportRoutes);
 
 // Disable caching globally (place BEFORE routes)
 app.use((req, res, next) => {
