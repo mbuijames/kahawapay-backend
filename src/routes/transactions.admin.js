@@ -117,14 +117,32 @@ router.put("/:id/mark-paid", async (req, res) => {
       console.log("📧 Sending email to:", userEmail);
 
       try {
-        await transporter.sendMail({
-          from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
-          to: userEmail,
-          subject: "Transaction Successful – KahawaPay",
-          html: `
-            <h2>Transaction Successful ☕</h2>
-            <p>Your transaction has been completed.</p>
-            <p><strong>Amount Received:</strong> ${tx.recipient_amount} ${tx.currency}</p>
+       await transporter.sendMail({
+  from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
+  to: userEmail,
+  subject: "Transaction Successful – KahawaPay",
+  html: `
+    <div style="font-family: Arial, sans-serif; color:#333;">
+      <h2>Transaction Successful ☕</h2>
+      <p>Your transaction has been completed successfully.</p>
+      <p><strong>Amount Received:</strong> ${tx.recipient_amount} ${tx.currency}</p>
+
+      <hr style="margin:20px 0;" />
+
+      <p style="font-size:13px; color:#666;">
+        This email confirms that your Bitcoin tip has been processed on the KahawaPay platform.
+      </p>
+
+      <p style="font-size:13px; color:#666;">
+        Support: <a href="mailto:info@kahawapay.com">info@kahawapay.com</a><br/>
+        Website: <a href="https://kahawapay.com">www.kahawapay.com</a>
+      </p>
+
+      <p style="font-size:12px; color:#999;">
+        © ${new Date().getFullYear()} KahawaPay. All rights reserved.<br/>
+        This is an automated message. Please do not reply directly.
+      </p>
+    </div>
           `
         });
 
