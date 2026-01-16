@@ -95,36 +95,47 @@ router.put("/:id/mark-paid", async (req, res) => {
 
     const tx = updated[0];
 
-    // 2. Get user email
-    const [user] = await sequelize.query(
-      `
-      SELECT email FROM public.users WHERE id = :user_id;
-      `,
-      {
-        replacements: { user_id: tx.user_id },
-        type: QueryTypes.SELECT
-      }
-    );
-
-    // 3. Send email
-    if (user?.email) {
-      await transporter.sendMail({
-        from: `"KahawaPay" <${process.env.SMTP_USER}>`,
-        to: user.email,
-        subject: "Transaction Successful – KahawaPay",
-        html: `
-          <h2>Payment Confirmed ☕</h2>
-          <p>Your transaction has been successfully completed.</p>
-          <p><strong>Amount Received:</strong> ${tx.recipient_amount} ${tx.currency}</p>
-          <p>Thank you for using KahawaPay.</p>
-        `
-      });
+    // 2. Try to get authenticated user's email
+    let userEmail = null;
+    if (tx.user_id) {
+      const [user] = await sequelize.query(
+        `SELECT email FROM public.users WHERE id = :uid LIMIT 1;`,
+        {
+          replacements: { uid: tx.user_id },
+          type: QueryTypes.SELECT
+        }
+      );
+      userEmail = user?.email || null;
     }
 
+    // 3. Try sending email (do NOT fail request if email fails)
+    if (userEmail) {
+      try {
+        await transporter.sendMail({
+          from: `"KahawaPay" <${process.env.SMTP_USER}>`,
+          to: userEmail,
+          subject: "Your KahawaPay Transaction Was Successful",
+          html: `
+            <h2>Transaction Successful ☕</h2>
+            <p>Your Bitcoin tip has been successfully processed.</p>
+            <p><strong>Amount Received:</strong> ${tx.recipient_amount} ${tx.currency}</p>
+            <p>You will see the funds reflected shortly.</p>
+            <p>Thank you for using KahawaPay.</p>
+          `
+        });
+        console.log("📧 Confirmation email sent to:", userEmail);
+      } catch (mailErr) {
+        console.error("⚠️ Email failed but transaction is paid:", mailErr.message);
+      }
+    } else {
+      console.log("ℹ️ No user email (guest transaction), skipping email.");
+    }
+
+    // 4. Always return success since DB update worked
     return res.json(tx);
 
   } catch (err) {
-    console.error("🔥 mark-paid error:", err);
+    console.error("🔥 mark-paid fatal error:", err);
     return res.status(500).json({ error: "Failed to mark paid", details: err.message });
   }
 });
