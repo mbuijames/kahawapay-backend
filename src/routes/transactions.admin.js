@@ -2,6 +2,7 @@
 import express from "express";
 import sequelize from "../db.js";
 import { QueryTypes } from "sequelize";
+import nodemailer from "nodemailer";
 
 const router = express.Router();
 
