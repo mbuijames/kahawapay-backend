@@ -78,41 +78,51 @@ router.put("/:id/mark-paid", async (req, res) => {
   try {
     const id = Number(req.params.id);
 
-    const rows = await sequelize.query(
+    // 1. Mark as paid
+    const updated = await sequelize.query(
       `
       UPDATE public.transactions
       SET status = 'paid', paid_at = NOW()
       WHERE id = :id
-      RETURNING
-        t.*,
-        u.email
-      FROM public.transactions t
-      LEFT JOIN public.users u ON u.id = t.user_id
-      WHERE t.id = :id;
+      RETURNING *;
       `,
       { replacements: { id }, type: QueryTypes.SELECT }
     );
 
-    if (!rows.length) return res.status(404).json({ error: "Transaction not found" });
+    if (!updated.length) {
+      return res.status(404).json({ error: "Transaction not found" });
+    }
 
-    const tx = rows[0];
+    const tx = updated[0];
 
-    // Send email
-    if (tx.email) {
+    // 2. Get user email
+    const [user] = await sequelize.query(
+      `
+      SELECT email FROM public.users WHERE id = :user_id;
+      `,
+      {
+        replacements: { user_id: tx.user_id },
+        type: QueryTypes.SELECT
+      }
+    );
+
+    // 3. Send email
+    if (user?.email) {
       await transporter.sendMail({
         from: `"KahawaPay" <${process.env.SMTP_USER}>`,
-        to: tx.email,
-        subject: "Your KahawaPay Transaction Was Successful",
+        to: user.email,
+        subject: "Transaction Successful – KahawaPay",
         html: `
-          <h2>Transaction Successful ☕</h2>
-          <p>Your Bitcoin tip has been successfully processed.</p>
+          <h2>Payment Confirmed ☕</h2>
+          <p>Your transaction has been successfully completed.</p>
           <p><strong>Amount Received:</strong> ${tx.recipient_amount} ${tx.currency}</p>
           <p>Thank you for using KahawaPay.</p>
-        `,
+        `
       });
     }
 
     return res.json(tx);
+
   } catch (err) {
     console.error("🔥 mark-paid error:", err);
     return res.status(500).json({ error: "Failed to mark paid", details: err.message });
