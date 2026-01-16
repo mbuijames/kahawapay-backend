@@ -77,8 +77,8 @@ router.get("/all", async (_req, res) => {
 router.put("/:id/mark-paid", async (req, res) => {
   try {
     const id = Number(req.params.id);
+    console.log("➡️ Marking transaction paid:", id);
 
-    // 1. Mark as paid
     const updated = await sequelize.query(
       `
       UPDATE public.transactions
@@ -90,13 +90,15 @@ router.put("/:id/mark-paid", async (req, res) => {
     );
 
     if (!updated.length) {
+      console.log("❌ Transaction not found");
       return res.status(404).json({ error: "Transaction not found" });
     }
 
     const tx = updated[0];
+    console.log("✅ Updated TX:", tx.id, "User ID:", tx.user_id);
 
-    // 2. Try to get authenticated user's email
     let userEmail = null;
+
     if (tx.user_id) {
       const [user] = await sequelize.query(
         `SELECT email FROM public.users WHERE id = :uid LIMIT 1;`,
@@ -105,33 +107,35 @@ router.put("/:id/mark-paid", async (req, res) => {
           type: QueryTypes.SELECT
         }
       );
+
+      console.log("👤 User record:", user);
+
       userEmail = user?.email || null;
     }
 
-    // 3. Try sending email (do NOT fail request if email fails)
     if (userEmail) {
+      console.log("📧 Sending email to:", userEmail);
+
       try {
         await transporter.sendMail({
-          from: `"KahawaPay" <${process.env.SMTP_USER}>`,
+          from: `"KahawaPay" <${process.env.EMAIL_USER}>`,
           to: userEmail,
-          subject: "Your KahawaPay Transaction Was Successful",
+          subject: "Transaction Successful – KahawaPay",
           html: `
             <h2>Transaction Successful ☕</h2>
-            <p>Your Bitcoin tip has been successfully processed.</p>
+            <p>Your transaction has been completed.</p>
             <p><strong>Amount Received:</strong> ${tx.recipient_amount} ${tx.currency}</p>
-            <p>You will see the funds reflected shortly.</p>
-            <p>Thank you for using KahawaPay.</p>
           `
         });
-        console.log("📧 Confirmation email sent to:", userEmail);
+
+        console.log("✅ Email sent successfully");
       } catch (mailErr) {
-        console.error("⚠️ Email failed but transaction is paid:", mailErr.message);
+        console.error("❌ Email send failed:", mailErr);
       }
     } else {
-      console.log("ℹ️ No user email (guest transaction), skipping email.");
+      console.log("ℹ️ No authenticated user email found, skipping email.");
     }
 
-    // 4. Always return success since DB update worked
     return res.json(tx);
 
   } catch (err) {
@@ -139,6 +143,7 @@ router.put("/:id/mark-paid", async (req, res) => {
     return res.status(500).json({ error: "Failed to mark paid", details: err.message });
   }
 });
+
 
 /** Archive */
 router.put("/:id/archive", async (req, res) => {
